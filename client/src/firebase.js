@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
-
+import { getFirestore } from "firebase/firestore";
 // Apni Firebase console wali keys yahan dhyan se replace karna
 const firebaseConfig = {
   apiKey: "AIzaSyBET7ZUh5HpZJyHmVG98c16HA7Apo2nlUU",
@@ -17,6 +17,6 @@ const app = initializeApp(firebaseConfig);
 // Google Auth ka setup (Jo tumhari file se miss ho gaya tha)
 const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
-
+export const db = getFirestore(app);
 // Ye export line zaroori hai taaki Login.jsx isko padh sake
 export { auth, provider };
