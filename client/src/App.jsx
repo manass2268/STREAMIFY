@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-// 🔥 Yahan signOut import add kiya gaya hai
 import { onAuthStateChanged, signOut } from 'firebase/auth'; 
 import { auth } from './firebase'; 
 
 import SplashScreen from './components/SplashScreen'; 
 import Login from './pages/Login';
+import ForgotPassword from './pages/ForgotPassword'; // 🔥 Yahan import add kar diya gaya hai
 import UpdatePassword from './pages/UpdatePassword';
 
 export default function App() {
@@ -49,7 +49,7 @@ export default function App() {
             element={!user ? <Login /> : <Navigate to="/dashboard" />} 
           />
 
-          {/* DASHBOARD ROUTE (Temporary testing dashboard with Logout) */}
+          {/* DASHBOARD ROUTE */}
           <Route 
             path="/dashboard" 
             element={
@@ -72,7 +72,6 @@ export default function App() {
                       Go to Security Settings ⚙️
                     </a>
 
-                    {/* 🔥 NAYA LOGOUT BUTTON */}
                     <button 
                       onClick={async () => {
                         await signOut(auth);
@@ -107,7 +106,8 @@ export default function App() {
             } 
           />
 
-          {/* UPDATE & RESET PASSWORD ROUTE (Ab yeh sabke liye khula hai taaki email link kaam kare) */}
+          {/* PASSWORD & AUTH ROUTES */}
+          <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/settings/password" element={<UpdatePassword />} />
 
           {/* CATCH ALL ROUTE */}

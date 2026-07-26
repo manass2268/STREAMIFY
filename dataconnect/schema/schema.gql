@@ -1,0 +1,41 @@
+type User @table {
+  email: String!
+  createdAt: Timestamp!
+  displayName: String
+  preferences: String
+}
+
+type Portfolio @table {
+  name: String!
+  description: String
+  user: User!
+}
+
+type Asset @table {
+  tickerSymbol: String!
+  name: String!
+  type: String!
+  currentPrice: Float
+  sector: String
+  portfolio: Portfolio!
+}
+
+type Holding @table {
+  quantity: Float!
+  purchasePrice: Float!
+  purchaseDate: Date!
+  asset: Asset!
+}
+
+type Dividend @table {
+  amount: Float!
+  paymentDate: Date!
+  asset: Asset!
+}
+
+type Goal @table {
+  targetValue: Float!
+  targetDate: Date!
+  status: String
+  portfolio: Portfolio!
+}

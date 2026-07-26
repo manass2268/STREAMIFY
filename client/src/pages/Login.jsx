@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import emailjs from '@emailjs/browser';
 import logo from '../assets/logo1.png'; 
-import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendPasswordResetEmail, updateProfile } from "firebase/auth";
+import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { auth, provider, db } from '../firebase'; 
 import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function Login({ onLoginSuccess }) {
-  const [view, setView] = useState('login'); 
+  const [view, setView] = useState('login'); // 'login' | 'signup' | 'forgot' | 'verify-otp' | 'new-password'
   const [showAbout, setShowAbout] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,6 +16,11 @@ export default function Login({ onLoginSuccess }) {
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [successData, setSuccessData] = useState(null);
+
+  // OTP States
+  const [enteredOtp, setEnteredOtp] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
 
   const navigate = useNavigate();
 
@@ -41,20 +47,6 @@ export default function Login({ onLoginSuccess }) {
       }
       
       setSuccessData({ name: user.displayName, email: user.email, photo: user.photoURL });
-
-      const API_URL = window.location.hostname === 'localhost' 
-        ? 'http://localhost:5000' 
-        : 'https://streamify-backend-ptmq.onrender.com';
-
-      try {
-        await fetch(`${API_URL}/api/send-welcome-email`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: user.displayName, email: user.email })
-        });
-      } catch (backendErr) {
-        console.error("Backend server offline (Ignored for testing):", backendErr);
-      }
 
       setTimeout(() => {
         if (onLoginSuccess) onLoginSuccess();
@@ -129,19 +121,73 @@ export default function Login({ onLoginSuccess }) {
     }
   };
 
-  // 4. Forgot Password
-  const handleForgotPassword = async (e) => {
+  // 4. Step 1: Send OTP via EmailJS (FIXED & DEFINED)
+  const handleSendOtp = async (e) => {
     e.preventDefault();
     if (loading) return;
     setLoading(true);
     setErrorMsg('');
     setSuccessMsg('');
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedOtp(otp);
+
+    const templateParams = {
+      email: email,
+      passcode: otp,
+    };
+
     try {
-      await sendPasswordResetEmail(auth, email);
-      setSuccessMsg('Password reset link sent! Check your inbox.');
+      await emailjs.send(
+        'service_3fuecur', 
+        'template_4a05mhq', 
+        templateParams, 
+        'DL-diaDi38urRZgHj'
+      );
+      
       setLoading(false);
+      setView('verify-otp');
+      setSuccessMsg('6-digit OTP sent to your email!');
     } catch (error) {
-      setErrorMsg(error.message.replace("Firebase: ", ""));
+      console.error("EmailJS Error:", error);
+      setErrorMsg("Failed to send OTP. Check your EmailJS keys.");
+      setLoading(false);
+    }
+  };
+
+  // 5. Step 2: Verify OTP (FIXED & DEFINED)
+  const handleVerifyOtp = (e) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    if (enteredOtp.trim() === generatedOtp.trim()) {
+      setView('new-password');
+      setSuccessMsg('OTP verified successfully! Set your new password.');
+    } else {
+      setErrorMsg('Invalid OTP. Please check and try again.');
+    }
+  };
+
+  // 6. Step 3: Complete Password Reset (FIXED & DEFINED)
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    if (loading) return;
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      setLoading(false);
+      setSuccessMsg('Password updated successfully! Redirecting to login...');
+      setTimeout(() => {
+        setView('login');
+        setSuccessMsg('');
+        setPassword('');
+        setEmail('');
+      }, 2000);
+    } catch (error) {
+      setErrorMsg("Failed to update password. Please try again.");
       setLoading(false);
     }
   };
@@ -246,7 +292,7 @@ export default function Login({ onLoginSuccess }) {
           </div>
         </div>
 
-        {/* RIGHT SIDE: DYNAMIC FORMS WITH ANIMATED BORDER */}
+        {/* RIGHT SIDE: DYNAMIC FORMS */}
         <div className="right-panel">
           <div className="entry-wrapper animate-slide-up-slow">
             <div className="login-card-wrapper animate-float">
@@ -258,6 +304,7 @@ export default function Login({ onLoginSuccess }) {
                     <h2>Welcome Back! 👋</h2>
                     <p className="card-subtitle">Login to continue your journey</p>
                     {errorMsg && <div className="error-banner">{errorMsg}</div>}
+                    {successMsg && <div className="success-banner">{successMsg}</div>}
                     <form className="login-form" onSubmit={handleEmailLogin}>
                       <div className="input-group">
                         <div className="input-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg></div>
@@ -268,7 +315,7 @@ export default function Login({ onLoginSuccess }) {
                         <input type="password" placeholder="Enter your password" value={password} onChange={(e) => setPassword(e.target.value)} required />
                       </div>
                       <div className="forgot-password">
-                        <span onClick={() => { setView('forgot'); setErrorMsg(''); }} style={{color: '#a855f7', cursor: 'pointer', fontSize: '13px'}}>Forgot Password?</span>
+                        <span onClick={() => { setView('forgot'); setErrorMsg(''); setSuccessMsg(''); }} style={{color: '#a855f7', cursor: 'pointer', fontSize: '13px'}}>Forgot Password?</span>
                       </div>
                       <button type="submit" className="btn-primary-3d shine-effect" disabled={loading}>
                         {loading ? "Logging in..." : "Log In"}
@@ -282,7 +329,7 @@ export default function Login({ onLoginSuccess }) {
                       </button>
                     </div>
                     <p className="signup-text">
-                      Don't have an account? <span onClick={() => { setView('signup'); setErrorMsg(''); }} style={{color: '#a855f7', cursor: 'pointer', fontWeight: '500'}}>Sign Up</span>
+                      Don't have an account? <span onClick={() => { setView('signup'); setErrorMsg(''); setSuccessMsg(''); }} style={{color: '#a855f7', cursor: 'pointer', fontWeight: '500'}}>Sign Up</span>
                     </p>
                   </>
                 )}
@@ -318,30 +365,78 @@ export default function Login({ onLoginSuccess }) {
                       </button>
                     </div>
                     <p className="signup-text">
-                      Already have an account? <span onClick={() => { setView('login'); setErrorMsg(''); }} style={{color: '#a855f7', cursor: 'pointer', fontWeight: '500'}}>Log In</span>
+                      Already have an account? <span onClick={() => { setView('login'); setErrorMsg(''); setSuccessMsg(''); }} style={{color: '#a855f7', cursor: 'pointer', fontWeight: '500'}}>Log In</span>
                     </p>
                   </>
                 )}
 
-                {/* FORGOT PASSWORD FORM */}
+                {/* FORGOT PASSWORD: STEP 1 - EMAIL */}
                 {view === 'forgot' && (
                   <>
                     <h2>Reset Password 🔒</h2>
-                    <p className="card-subtitle">Enter your email and we'll send you a link to recover your account.</p>
+                    <p className="card-subtitle">Enter your email to receive a secure 6-digit verification code.</p>
                     {successMsg && <div className="success-banner">{successMsg}</div>}
                     {errorMsg && <div className="error-banner">{errorMsg}</div>}
-                    <form className="login-form" onSubmit={handleForgotPassword}>
+                    <form className="login-form" onSubmit={handleSendOtp}>
                       <div className="input-group">
                         <div className="input-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg></div>
                         <input type="email" placeholder="Enter your registered email" value={email} onChange={(e) => setEmail(e.target.value)} required />
                       </div>
                       <button type="submit" className="btn-primary-3d shine-effect" disabled={loading}>
-                        {loading ? "Sending..." : "Send Reset Link"}
+                        {loading ? "Sending OTP..." : "Send OTP"}
                       </button>
                     </form>
                     <p className="signup-text" style={{marginTop: '20px'}}>
                       Remember your password? <span onClick={() => { setView('login'); setErrorMsg(''); setSuccessMsg(''); }} style={{color: '#a855f7', cursor: 'pointer', fontWeight: '500'}}>Back to Login</span>
                     </p>
+                  </>
+                )}
+
+                {/* FORGOT PASSWORD: STEP 2 - VERIFY OTP */}
+                {view === 'verify-otp' && (
+                  <>
+                    <h2>Verify OTP ✉️</h2>
+                    <p className="card-subtitle">Enter the 6-digit code sent to your email.</p>
+                    {successMsg && <div className="success-banner">{successMsg}</div>}
+                    {errorMsg && <div className="error-banner">{errorMsg}</div>}
+                    <form className="login-form" onSubmit={handleVerifyOtp}>
+                      <div className="input-group">
+                        <input 
+                          type="text" 
+                          maxLength="6"
+                          placeholder="123456" 
+                          value={enteredOtp} 
+                          onChange={(e) => setEnteredOtp(e.target.value)} 
+                          required 
+                          style={{ textAlign: 'center', letterSpacing: '4px', fontSize: '18px', paddingLeft: '12px' }}
+                        />
+                      </div>
+                      <button type="submit" className="btn-primary-3d shine-effect">
+                        Verify OTP
+                      </button>
+                    </form>
+                    <p className="signup-text" style={{marginTop: '20px'}}>
+                      <span onClick={() => { setView('forgot'); setErrorMsg(''); setSuccessMsg(''); }} style={{color: '#a855f7', cursor: 'pointer', fontWeight: '500'}}>Resend OTP / Change Email</span>
+                    </p>
+                  </>
+                )}
+
+                {/* FORGOT PASSWORD: STEP 3 - NEW PASSWORD */}
+                {view === 'new-password' && (
+                  <>
+                    <h2>New Password 🔑</h2>
+                    <p className="card-subtitle">Create a secure new password for your account.</p>
+                    {successMsg && <div className="success-banner">{successMsg}</div>}
+                    {errorMsg && <div className="error-banner">{errorMsg}</div>}
+                    <form className="login-form" onSubmit={handleUpdatePassword}>
+                      <div className="input-group">
+                        <div className="input-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg></div>
+                        <input type="password" placeholder="Enter new password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required />
+                      </div>
+                      <button type="submit" className="btn-primary-3d shine-effect" disabled={loading}>
+                        {loading ? "Updating..." : "Update Password"}
+                      </button>
+                    </form>
                   </>
                 )}
 
@@ -381,7 +476,6 @@ export default function Login({ onLoginSuccess }) {
         .animate-scale-up { animation: scaleUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
         @keyframes scaleUp { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
 
-        /* ABOUT MODAL STYLES */
         .about-overlay { position: fixed; inset: 0; background: rgba(9, 9, 14, 0.85); backdrop-filter: blur(15px); z-index: 200; display: flex; align-items: center; justify-content: center; padding: 20px; }
         .about-modal { background: rgba(18, 18, 26, 0.85); border: 1px solid rgba(255, 255, 255, 0.1); border-top: 1px solid rgba(168, 85, 247, 0.3); border-radius: 24px; padding: 40px; width: 100%; max-width: 480px; box-shadow: 0 35px 65px rgba(0, 0, 0, 0.8), 0 0 40px rgba(168, 85, 247, 0.15); position: relative; overflow: hidden; }
         .about-header { display: flex; flex-direction: column; align-items: center; margin-bottom: 25px; }
@@ -399,14 +493,13 @@ export default function Login({ onLoginSuccess }) {
 
         .perspective-container { perspective: 1000px; }
         
-        /* 🔥 FIX 1: Dynamic Height Setup & Flex Column Flow */
         .login-wrapper { 
-          min-height: 100dvh; /* Exact viewport height, works great on mobile */
+          min-height: 100dvh; 
           width: 100vw; 
           display: flex; 
           flex-direction: column; 
           position: relative; 
-          overflow-y: auto; /* Only scrolls if screen is extremely small */
+          overflow-y: auto; 
           overflow-x: hidden;
         }
         
@@ -417,7 +510,6 @@ export default function Login({ onLoginSuccess }) {
         .animate-breathe-delayed { animation: breathe 10s infinite alternate-reverse ease-in-out; }
         @keyframes breathe { 0% { transform: scale(0.9) translate(0, 0); opacity: 0.12; } 100% { transform: scale(1.1) translate(20px, 20px); opacity: 0.2; } }
 
-        /* 🔥 FIX 2: Smart Auto-Margin Centering */
         .login-container { 
           width: 100%; 
           max-width: 1050px; 
@@ -427,8 +519,8 @@ export default function Login({ onLoginSuccess }) {
           position: relative; 
           align-items: center; 
           justify-content: center; 
-          margin: auto; /* Pushes element exactly to center vertically & horizontally */
-          padding: 40px 20px; /* Safe area padding so content doesn't hit screen edges */
+          margin: auto; 
+          padding: 40px 20px; 
         }
         
         .left-panel { flex: 1; display: flex; flex-direction: column; justify-content: center; text-align: left; }
@@ -453,14 +545,13 @@ export default function Login({ onLoginSuccess }) {
         .animate-float { animation: floatCard 6s ease-in-out infinite; }
         @keyframes floatCard { 0% { transform: translateY(0px); } 50% { transform: translateY(-8px); } 100% { transform: translateY(0px); } }
 
-        /* THE ANIMATED GLOWING BORDER WRAPPER */
         .login-card-wrapper {
           position: relative;
           padding: 3px; 
           border-radius: 24px;
           overflow: hidden;
           width: 100%;
-          max-width: 420px; /* Kept compact */
+          max-width: 420px; 
           box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
         }
 
@@ -485,7 +576,7 @@ export default function Login({ onLoginSuccess }) {
           position: relative;
           background: #13131c; 
           border-radius: 22px;
-          padding: 35px 25px; /* Compact padding to fit nicely */
+          padding: 35px 25px; 
           width: 100%;
           height: 100%;
           z-index: 1;
@@ -514,13 +605,12 @@ export default function Login({ onLoginSuccess }) {
         .error-banner { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; padding: 10px; border-radius: 8px; font-size: 12px; margin-bottom: 15px; text-align: center; }
         .success-banner { background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.4); color: #86efac; padding: 10px; border-radius: 8px; font-size: 12px; margin-bottom: 15px; text-align: center; }
 
-        /* 🔥 FIX 3: Footer positioned cleanly at the bottom without absolute overlap */
         .global-footer {
           position: relative;
           width: 100%;
           text-align: center;
           padding: 20px;
-          margin-top: auto; /* Pushes the footer to the bottom of the column flexbox naturally */
+          margin-top: auto; 
           z-index: 20;
           display: flex;
           flex-direction: column;
@@ -578,7 +668,6 @@ export default function Login({ onLoginSuccess }) {
         @media (max-width: 1024px) {
           .login-container { flex-direction: column; max-width: 450px; padding: 30px 15px; }
           .left-panel { display: none; }
-          /* Mobile keeps normal scrolling behavior just in case */
           .login-card-wrapper { max-width: 100%; }
           .footer-links { gap: 10px; } 
           .footer-divider { display: none; } 

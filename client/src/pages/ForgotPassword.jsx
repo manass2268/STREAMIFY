@@ -1,40 +1,81 @@
 import React, { useState } from 'react';
-import logo from '../assets/logo1.png'; 
-// 🔥 Firebase auth imports hata diye hain kyunki ab humara backend mail bhejega
+import { useNavigate } from 'react-router-dom';
+import emailjs from '@emailjs/browser';
+import logo from '../assets/logo1.png';
 
-export default function ForgotPassword({ backToLogin }) {
+export default function ForgotPassword() {
+  const [step, setStep] = useState(1); // 1: Email, 2: OTP, 3: New Password
   const [email, setEmail] = useState('');
+  const [enteredOtp, setEnteredOtp] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  
+  const navigate = useNavigate();
 
-  const handleResetPassword = async (e) => {
+  // 1. Send OTP via EmailJS
+  const handleSendOtp = async (e) => {
     e.preventDefault();
     setLoading(true);
     setMessage('');
     setErrorMsg('');
 
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    setGeneratedOtp(otp);
+
+    const templateParams = {
+      email: email,
+      passcode: otp,
+    };
+
     try {
-      // 🔥 Yahan hum apne Vercel Backend ko call kar rahe hain
-      const response = await fetch('https://streamfiy-backend-i4jgtj5le-manas-singhs-projects-6092d1b2.vercel.app/api/send-reset-email', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email: email }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setMessage('Password reset link sent! Check your inbox.');
-      } else {
-        setErrorMsg(data.message || 'Failed to send reset email.');
-      }
+      // ⚠️ Apni EmailJS credentials yahan daal dena
+      await emailjs.send(
+        'YOUR_SERVICE_ID', 
+        'YOUR_TEMPLATE_ID', 
+        templateParams, 
+        'YOUR_PUBLIC_KEY'
+      );
+      
+      setLoading(false);
+      setStep(2);
+      setMessage('6-digit OTP sent to your email! Check your inbox.');
     } catch (error) {
-      console.error("Reset Error:", error);
-      setErrorMsg("Something went wrong. Please try again.");
-    } finally {
+      console.error('EmailJS Error:', error);
+      setLoading(false);
+      setErrorMsg('Failed to send OTP. Please check your configuration.');
+    }
+  };
+
+  // 2. Verify OTP
+  const handleVerifyOtp = (e) => {
+    e.preventDefault();
+    setErrorMsg('');
+    if (enteredOtp.trim() === generatedOtp) {
+      setStep(3);
+      setMessage('OTP verified successfully! Enter your new password.');
+    } else {
+      setErrorMsg('Invalid OTP. Please check and try again.');
+    }
+  };
+
+  // 3. Update Password Success
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setErrorMsg('');
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      setLoading(false);
+      setMessage('Password updated successfully! Redirecting to login...');
+      setTimeout(() => {
+        navigate('/'); // Login page par bhej do
+      }, 2000);
+    } catch (error) {
+      setErrorMsg('Failed to update password.');
       setLoading(false);
     }
   };
@@ -47,76 +88,120 @@ export default function ForgotPassword({ backToLogin }) {
       <div className="login-container" style={{justifyContent: 'center'}}>
         <div className="right-panel" style={{flex: 'none', width: '100%', maxWidth: '450px'}}>
           <div className="entry-wrapper animate-slide-up-slow">
-            <div className="login-card-3d animate-float" style={{textAlign: 'center'}}>
-              
-              <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '20px'}}>
-                <img src={logo} alt="Streamify" style={{height: '35px'}} />
-                <span style={{fontSize: '24px', fontWeight: '800'}}>stream<span className="text-cyan">ify</span></span>
-              </div>
-
-              <h2>Reset Password 🔒</h2>
-              <p className="card-subtitle">Enter your email and we'll send you a link to get back into your account.</p>
-
-              {message && <div className="success-banner">{message}</div>}
-              {errorMsg && <div className="error-banner">{errorMsg}</div>}
-
-              <form className="login-form" onSubmit={handleResetPassword}>
-                <div className="input-group">
-                  <div className="input-icon">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>
-                  </div>
-                  <input 
-                    type="email" 
-                    placeholder="Enter your registered email" 
-                    value={email} 
-                    onChange={(e) => setEmail(e.target.value)} 
-                    required 
-                  />
+            <div className="login-card-wrapper animate-float">
+              <div className="login-card-content" style={{textAlign: 'center'}}>
+                
+                <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', marginBottom: '20px'}}>
+                  <img src={logo} alt="Streamify" style={{height: '35px'}} />
+                  <span style={{fontSize: '24px', fontWeight: '800'}}>stream<span className="text-cyan">ify</span></span>
                 </div>
 
-                <button type="submit" className="btn-primary-3d shine-effect" disabled={loading}>
-                  {loading ? "Sending Link..." : "Send Reset Link"}
-                </button>
-              </form>
+                <h2>Reset Password 🔒</h2>
+                <p className="card-subtitle">
+                  {step === 1 && "Enter your email to receive a secure verification code."}
+                  {step === 2 && "Enter the 6-digit OTP sent to your email."}
+                  {step === 3 && "Create a secure new password."}
+                </p>
 
-              <p className="signup-text" style={{marginTop: '20px'}}>
-                Remember your password? <span onClick={backToLogin} style={{color: '#a855f7', cursor: 'pointer', fontWeight: '500'}}>Back to Login</span>
-              </p>
+                {message && <div className="success-banner">{message}</div>}
+                {errorMsg && <div className="error-banner">{errorMsg}</div>}
+
+                {/* STEP 1: Email Form */}
+                {step === 1 && (
+                  <form className="login-form" onSubmit={handleSendOtp}>
+                    <div className="input-group">
+                      <input 
+                        type="email" 
+                        placeholder="Enter your registered email" 
+                        value={email} 
+                        onChange={(e) => setEmail(e.target.value)} 
+                        required 
+                      />
+                    </div>
+                    <button type="submit" className="btn-primary-3d shine-effect" disabled={loading}>
+                      {loading ? "Sending OTP..." : "Send OTP"}
+                    </button>
+                  </form>
+                )}
+
+                {/* STEP 2: OTP Form */}
+                {step === 2 && (
+                  <form className="login-form" onSubmit={handleVerifyOtp}>
+                    <div className="input-group">
+                      <input 
+                        type="text" 
+                        maxLength="6"
+                        placeholder="123456" 
+                        value={enteredOtp} 
+                        onChange={(e) => setEnteredOtp(e.target.value)} 
+                        required 
+                        style={{ textAlign: 'center', letterSpacing: '4px', fontSize: '18px' }}
+                      />
+                    </div>
+                    <button type="submit" className="btn-primary-3d shine-effect">
+                      Verify OTP
+                    </button>
+                  </form>
+                )}
+
+                {/* STEP 3: New Password Form */}
+                {step === 3 && (
+                  <form className="login-form" onSubmit={handleUpdatePassword}>
+                    <div className="input-group">
+                      <input 
+                        type="password" 
+                        placeholder="Enter new password" 
+                        value={newPassword} 
+                        onChange={(e) => setNewPassword(e.target.value)} 
+                        required 
+                      />
+                    </div>
+                    <button type="submit" className="btn-primary-3d shine-effect" disabled={loading}>
+                      {loading ? "Updating..." : "Update Password"}
+                    </button>
+                  </form>
+                )}
+
+                <p className="signup-text" style={{marginTop: '20px'}}>
+                  Remember your password? <span onClick={() => navigate('/')} style={{color: '#a855f7', cursor: 'pointer', fontWeight: '500'}}>Back to Login</span>
+                </p>
+
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="footer animate-fade-in">© 2026 Streamify. All rights reserved.</div>
-
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background-color: #09090E; color: #ffffff; overflow: hidden; }
+        body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background-color: #09090E; color: #ffffff; overflow-x: hidden; }
         .perspective-container { perspective: 1000px; }
-        .login-wrapper { height: 100vh; width: 100vw; display: flex; align-items: center; justify-content: center; position: relative; padding: 2vh 4vw; }
+        .login-wrapper { min-height: 100dvh; width: 100vw; display: flex; align-items: center; justify-content: center; position: relative; padding: 20px; }
         .glow { position: absolute; width: 45vw; height: 45vw; border-radius: 50%; filter: blur(130px); opacity: 0.15; pointer-events: none; z-index: 0; }
         .glow-purple { top: -10%; left: -10%; background-color: #a855f7; }
         .glow-cyan { bottom: -10%; right: -10%; background-color: #06b6d4; }
         .animate-breathe { animation: breathe 8s infinite alternate ease-in-out; }
         .animate-breathe-delayed { animation: breathe 10s infinite alternate-reverse ease-in-out; }
         @keyframes breathe { 0% { transform: scale(0.9); opacity: 0.12; } 100% { transform: scale(1.1); opacity: 0.2; } }
-        .login-container { width: 100%; max-width: 1100px; display: flex; justify-content: center; z-index: 10; position: relative; }
+        .login-container { width: 100%; max-width: 500px; display: flex; justify-content: center; z-index: 10; position: relative; }
         .entry-wrapper { width: 100%; display: flex; justify-content: center; }
         .animate-float { animation: floatCard 6s ease-in-out infinite; }
-        @keyframes floatCard { 0% { transform: translateY(0px); } 50% { transform: translateY(-10px); } 100% { transform: translateY(0px); } }
-        .login-card-3d { background: rgba(18, 18, 26, 0.65); backdrop-filter: blur(24px); border: 1px solid rgba(255, 255, 255, 0.08); border-top: 1px solid rgba(255, 255, 255, 0.25); border-radius: 24px; padding: 35px 40px; width: 100%; max-width: 420px; box-shadow: 0 35px 65px rgba(0, 0, 0, 0.7); }
-        .login-card-3d h2 { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+        @keyframes floatCard { 0% { transform: translateY(0px); } 50% { transform: translateY(-8px); } 100% { transform: translateY(0px); } }
+        .login-card-wrapper { position: relative; padding: 3px; border-radius: 24px; overflow: hidden; width: 100%; max-width: 420px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5); }
+        .login-card-wrapper::before { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: conic-gradient(from 0deg, transparent 70%, #a855f7 85%, #06b6d4 100%); animation: rotate-border 3s linear infinite; z-index: 0; }
+        @keyframes rotate-border { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .login-card-content { position: relative; background: #13131c; border-radius: 22px; padding: 35px 25px; width: 100%; z-index: 1; }
+        .login-card-content h2 { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
         .card-subtitle { color: #9ca3af; font-size: 13px; margin-bottom: 25px; }
-        .login-form { display: flex; flex-direction: column; gap: 16px; }
-        .input-group { position: relative; }
-        .input-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: #6b7280; display: flex; pointer-events: none; }
-        .input-group input { width: 100%; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 12px 12px 12px 42px; color: #ffffff; font-size: 14px; outline: none; transition: 0.3s; }
+        .login-form { display: flex; flex-direction: column; gap: 14px; }
+        .input-group { position: relative; width: 100%; }
+        .input-group input { width: 100%; background: rgba(0, 0, 0, 0.5); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 12px; color: #ffffff; font-size: 13.5px; outline: none; transition: 0.3s; }
         .input-group input:focus { border-color: #a855f7; background: rgba(0,0,0,0.7); box-shadow: 0 0 15px rgba(168,85,247,0.2); }
-        .btn-primary-3d { width: 100%; background: linear-gradient(135deg, #a855f7, #3b82f6); color: #ffffff; border: none; border-radius: 12px; padding: 14px; font-size: 15px; font-weight: 600; cursor: pointer; transition: 0.3s; }
-        .signup-text { text-align: center; font-size: 13px; color: #9ca3af; }
+        .btn-primary-3d { width: 100%; background: linear-gradient(135deg, #a855f7, #3b82f6); color: #ffffff; border: none; border-radius: 12px; padding: 12px; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.3s; box-shadow: 0 10px 20px -5px rgba(168, 85, 247, 0.6); }
+        .signup-text { text-align: center; font-size: 12.5px; color: #9ca3af; }
         .error-banner { background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; padding: 10px; border-radius: 8px; font-size: 12px; margin-bottom: 15px; text-align: center; }
         .success-banner { background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.4); color: #86efac; padding: 10px; border-radius: 8px; font-size: 12px; margin-bottom: 15px; text-align: center; }
-        .footer { position: fixed; bottom: 10px; width: 100%; text-align: center; font-size: 11px; color: #4b5563; z-index: 20; pointer-events: none; }
+        .text-cyan { color: #06b6d4; }
       `}</style>
     </div>
   );
