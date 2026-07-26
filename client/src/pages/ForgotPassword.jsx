@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import logo from '../assets/logo1.png'; 
-import { sendPasswordResetEmail } from "firebase/auth";
-import { auth } from '../firebase'; 
+// 🔥 Firebase auth imports hata diye hain kyunki ab humara backend mail bhejega
 
 export default function ForgotPassword({ backToLogin }) {
   const [email, setEmail] = useState('');
@@ -16,12 +15,26 @@ export default function ForgotPassword({ backToLogin }) {
     setErrorMsg('');
 
     try {
-      await sendPasswordResetEmail(auth, email);
-      setMessage('Password reset link sent! Check your inbox.');
-      setLoading(false);
+      // 🔥 Yahan hum apne Vercel Backend ko call kar rahe hain
+      const response = await fetch('https://streamfiy-backend-i4jgtj5le-manas-singhs-projects-6092d1b2.vercel.app/api/send-reset-email', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: email }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setMessage('Password reset link sent! Check your inbox.');
+      } else {
+        setErrorMsg(data.message || 'Failed to send reset email.');
+      }
     } catch (error) {
-      console.error("Reset Error:", error.message);
-      setErrorMsg(error.message.replace("Firebase: ", ""));
+      console.error("Reset Error:", error);
+      setErrorMsg("Something went wrong. Please try again.");
+    } finally {
       setLoading(false);
     }
   };
