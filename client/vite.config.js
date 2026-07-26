@@ -3,10 +3,8 @@ import react from "@vitejs/plugin-react";
 
 export default defineConfig({
   plugins: [react()],
-  server: {
-    allowedHosts: [
-      "modern-mammals-lick.loca.lt", // Tumhara current link
-      ".loca.lt", // Ye isliye taaki agar baad mein link change ho jaye, toh bhi error na aaye
-    ],
+  build: {
+    // LightningCSS ki jagah standard esbuild use karne ke liye taaki Tailwind at-rules fail na ho
+    cssMinify: "esbuild",
   },
 });
