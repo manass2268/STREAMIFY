@@ -1,0 +1,329 @@
+/* ===== RESET ===== */
+
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:'Poppins',sans-serif;
+}
+
+/* ===== BODY ===== */
+
+body{
+
+    background:#151a27;
+
+}
+
+/* ===== MAIN CONTAINER ===== */
+
+.container{
+
+    display:flex;
+    min-height:100vh;
+
+}
+
+/* ===== SIDEBAR ===== */
+
+.sidebar{
+
+    width:240px;
+    background:#1d2233;
+    color:white;
+    padding:20px;
+
+}
+
+/* ===== LOGO ===== */
+
+.logo{
+
+    margin-bottom:40px;
+}
+
+.logo h2{
+
+    font-size:28px;
+    font-weight:600;
+
+}
+
+/* ===== MENU ===== */
+
+.menu{
+
+    list-style:none;
+
+}
+
+.menu li{
+
+    padding:15px 18px;
+
+    margin-bottom:12px;
+
+    border-radius:10px;
+
+    cursor:pointer;
+
+    transition:.3s;
+
+    font-size:16px;
+
+}
+
+/* Active Button */
+
+.menu .active{
+
+    background:#2F80ED;
+
+}
+
+/* Hover Effect */
+
+.menu li:hover{
+
+    background:#2F80ED;
+
+}
+
+/* ===== MAIN SECTION ===== */
+
+.main{
+
+    flex:1;
+
+    padding:35px;
+
+    background:#202638;
+
+}
+/* ========================= */
+/*         BANNER            */
+/* ========================= */
+
+.banner{
+
+    width:100%;
+    height:240px;
+
+    border-radius:22px;
+
+    background:linear-gradient(135deg,#3b82f6,#1e3a8a);
+
+    display:flex;
+
+    align-items:flex-end;
+
+    padding:35px;
+
+    color:white;
+
+    margin-bottom:35px;
+
+    position:relative;
+
+    overflow:hidden;
+
+}
+
+/* Decorative circles */
+
+.banner::before{
+
+    content:"";
+
+    position:absolute;
+
+    width:320px;
+
+    height:320px;
+
+    background:rgba(255,255,255,.08);
+
+    border-radius:50%;
+
+    top:-120px;
+
+    right:-70px;
+
+}
+
+.banner::after{
+
+    content:"";
+
+    position:absolute;
+
+    width:180px;
+
+    height:180px;
+
+    background:rgba(255,255,255,.05);
+
+    border-radius:50%;
+
+    bottom:-60px;
+
+    right:170px;
+
+}
+
+.banner-text{
+
+    position:relative;
+
+    z-index:2;
+
+}
+
+.meeting{
+
+    display:inline-block;
+
+    font-size:15px;
+
+    background:rgba(255,255,255,.18);
+
+    padding:8px 18px;
+
+    border-radius:30px;
+
+    margin-bottom:15px;
+
+}
+
+.banner h1{
+
+    font-size:56px;
+
+    font-weight:700;
+
+    margin-bottom:10px;
+
+}
+
+.banner p{
+
+    font-size:18px;
+
+    opacity:.95;
+
+}
+/* ========================= */
+/*      ACTION CARDS         */
+/* ========================= */
+
+.cards{
+
+    display:grid;
+
+    grid-template-columns:repeat(4,1fr);
+
+    gap:20px;
+
+}
+
+/* Individual Card */
+
+.card{
+
+    height:180px;
+
+    border-radius:20px;
+
+    color:white;
+
+    padding:25px;
+
+    cursor:pointer;
+
+    transition:0.3s;
+
+    display:flex;
+
+    flex-direction:column;
+
+    justify-content:space-between;
+
+    box-shadow:0 10px 25px rgba(0,0,0,.25);
+
+}
+
+.card:hover{
+
+    transform:translateY(-8px);
+
+    box-shadow:0 18px 35px rgba(0,0,0,.35);
+
+}
+
+/* Icon */
+
+.icon{
+
+    width:55px;
+
+    height:55px;
+
+    background:rgba(255,255,255,.25);
+
+    border-radius:15px;
+
+    display:flex;
+
+    justify-content:center;
+
+    align-items:center;
+
+    font-size:26px;
+
+}
+
+/* Heading */
+
+.card h3{
+
+    font-size:22px;
+
+    font-weight:600;
+
+}
+
+/* Description */
+
+.card p{
+
+    font-size:15px;
+
+    opacity:.9;
+
+}
+
+/* Card Colors */
+
+.orange{
+
+    background:#F97316;
+
+}
+
+.purple{
+
+    background:#8B5CF6;
+
+}
+
+.blue{
+
+    background:#2563EB;
+
+}
+
+.yellow{
+
+    background:#EAB308;
+
+}
