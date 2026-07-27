@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { onAuthStateChanged, signOut } from 'firebase/auth'; 
+import { onAuthStateChanged } from 'firebase/auth'; 
 import { auth } from './firebase'; 
+import { Analytics } from '@vercel/analytics/react'; // <-- Vercel Analytics imported
 
 import SplashScreen from './components/SplashScreen'; 
 import Login from './pages/Login';
-import ForgotPassword from './pages/ForgotPassword'; // 🔥 Yahan import add kar diya gaya hai
+import Dashboard from './pages/Dashboard'; 
 import UpdatePassword from './pages/UpdatePassword';
 
 export default function App() {
@@ -33,7 +34,7 @@ export default function App() {
     return <div className="min-h-screen" style={{ backgroundColor: '#09090E' }}></div>;
   }
 
-  // 3. Main Routing
+  // 3. Main Routing & Analytics Integration
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#09090E' }}>
       <Router>
@@ -49,65 +50,13 @@ export default function App() {
             element={!user ? <Login /> : <Navigate to="/dashboard" />} 
           />
 
-          {/* DASHBOARD ROUTE */}
+          {/* DASHBOARD ROUTE (Real Integrated Dashboard) */}
           <Route 
             path="/dashboard" 
-            element={
-              user ? (
-                <div style={{ color: 'white', textAlign: 'center', padding: '50px', height: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                  <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold', marginBottom: '10px' }}>Streamify Dashboard 🍿</h1>
-                  <p style={{ color: '#9ca3af', marginBottom: '30px' }}>Welcome back, {user.displayName || user.email}!</p>
-                  
-                  <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'center' }}>
-                    
-                    <a href="/settings/password" style={{ 
-                      background: 'linear-gradient(135deg, #a855f7, #06b6d4)', 
-                      color: 'white', 
-                      padding: '12px 24px', 
-                      borderRadius: '12px', 
-                      textDecoration: 'none', 
-                      fontWeight: 'bold',
-                      boxShadow: '0 10px 20px -5px rgba(168, 85, 247, 0.4)'
-                    }}>
-                      Go to Security Settings ⚙️
-                    </a>
-
-                    <button 
-                      onClick={async () => {
-                        await signOut(auth);
-                      }}
-                      style={{
-                        background: 'transparent',
-                        border: '1px solid rgba(239, 68, 68, 0.5)',
-                        color: '#ef4444',
-                        padding: '12px 24px',
-                        borderRadius: '12px',
-                        fontWeight: 'bold',
-                        cursor: 'pointer',
-                        transition: '0.3s'
-                      }}
-                      onMouseOver={(e) => {
-                        e.target.style.background = 'rgba(239, 68, 68, 0.1)';
-                        e.target.style.borderColor = '#ef4444';
-                      }}
-                      onMouseOut={(e) => {
-                        e.target.style.background = 'transparent';
-                        e.target.style.borderColor = 'rgba(239, 68, 68, 0.5)';
-                      }}
-                    >
-                      Logout 🚪
-                    </button>
-
-                  </div>
-                </div>
-              ) : (
-                <Navigate to="/" />
-              )
-            } 
+            element={user ? <Dashboard /> : <Navigate to="/" />} 
           />
 
-          {/* PASSWORD & AUTH ROUTES */}
-          <Route path="/forgot-password" element={<ForgotPassword />} />
+          {/* SETTINGS ROUTE */}
           <Route path="/settings/password" element={<UpdatePassword />} />
 
           {/* CATCH ALL ROUTE */}
@@ -115,6 +64,9 @@ export default function App() {
 
         </Routes>
       </Router>
+      
+      {/* Vercel Analytics Tracker Component */}
+      <Analytics />
     </div>
   );
 }

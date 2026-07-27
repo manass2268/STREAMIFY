@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import emailjs from '@emailjs/browser';
 import logo from '../assets/logo1.png'; 
 import { signInWithPopup, signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { auth, provider, db } from '../firebase'; 
-import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { auth, provider, realtimeDb } from '../firebase'; 
+import { ref, set, update, serverTimestamp } from 'firebase/database';
 
 export default function Login({ onLoginSuccess }) {
   const [view, setView] = useState('login'); // 'login' | 'signup' | 'forgot' | 'verify-otp' | 'new-password'
@@ -24,7 +24,7 @@ export default function Login({ onLoginSuccess }) {
 
   const navigate = useNavigate();
 
-  // 1. Google Login
+  // 1. Google Login (Realtime Database Data Save)
   const handleGoogleLogin = async () => {
     if (loading) return; 
     setLoading(true);
@@ -34,16 +34,20 @@ export default function Login({ onLoginSuccess }) {
       const user = result.user;
 
       try {
-        const userRef = doc(db, 'users', user.uid);
-        await setDoc(userRef, {
+        const userRef = ref(realtimeDb, 'users/' + user.uid);
+        // Using set to initialize or update Google User
+        await set(userRef, {
+          uid: user.uid,
           name: user.displayName,
           email: user.email,
           photoURL: user.photoURL || '',
-          createdAt: serverTimestamp(),
+          role: "standard_user", 
+          subscriptionPlan: "free",
+          authProvider: "google",
           lastLoginTime: serverTimestamp(),
-        }, { merge: true }); 
+        }); 
       } catch (dbError) {
-        console.error("Error updating database:", dbError);
+        console.error("Realtime DB Error:", dbError);
       }
       
       setSuccessData({ name: user.displayName, email: user.email, photo: user.photoURL });
@@ -71,8 +75,13 @@ export default function Login({ onLoginSuccess }) {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
 
-      const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, { lastLoginTime: serverTimestamp() }, { merge: true });
+      // Update only the lastLoginTime so role and subscription are not overwritten
+      try {
+        const userRef = ref(realtimeDb, 'users/' + user.uid);
+        await update(userRef, { lastLoginTime: serverTimestamp() });
+      } catch (dbError) {
+        console.error("Realtime DB Update Error:", dbError);
+      }
 
       setSuccessData({ name: user.displayName || email.split('@')[0], email: user.email, photo: user.photoURL || null });
 
@@ -87,7 +96,7 @@ export default function Login({ onLoginSuccess }) {
     }
   };
 
-  // 3. Email & Password Signup
+  // 3. Email & Password Signup (Realtime Database Data Save)
   const handleEmailSignup = async (e) => {
     e.preventDefault();
     if (loading) return;
@@ -99,14 +108,22 @@ export default function Login({ onLoginSuccess }) {
 
       await updateProfile(user, { displayName: name });
 
-      const userRef = doc(db, 'users', user.uid);
-      await setDoc(userRef, {
-        name: name,
-        email: email,
-        photoURL: '',
-        createdAt: serverTimestamp(),
-        lastLoginTime: serverTimestamp(),
-      }, { merge: true });
+      try {
+        const userRef = ref(realtimeDb, 'users/' + user.uid);
+        await set(userRef, {
+          uid: user.uid,
+          name: name,
+          email: email,
+          photoURL: '',
+          role: "standard_user", 
+          subscriptionPlan: "free",
+          authProvider: "email",
+          createdAt: serverTimestamp(),
+          lastLoginTime: serverTimestamp(),
+        });
+      } catch (dbError) {
+        console.error("Realtime DB Save Error:", dbError);
+      }
 
       setSuccessData({ name: name, email: email, photo: null });
 
@@ -121,7 +138,7 @@ export default function Login({ onLoginSuccess }) {
     }
   };
 
-  // 4. Step 1: Send OTP via EmailJS (FIXED & DEFINED)
+  // 4. Step 1: Send OTP via EmailJS
   const handleSendOtp = async (e) => {
     e.preventDefault();
     if (loading) return;
@@ -155,7 +172,7 @@ export default function Login({ onLoginSuccess }) {
     }
   };
 
-  // 5. Step 2: Verify OTP (FIXED & DEFINED)
+  // 5. Step 2: Verify OTP
   const handleVerifyOtp = (e) => {
     e.preventDefault();
     setErrorMsg('');
@@ -169,7 +186,7 @@ export default function Login({ onLoginSuccess }) {
     }
   };
 
-  // 6. Step 3: Complete Password Reset (FIXED & DEFINED)
+  // 6. Step 3: Complete Password Reset
   const handleUpdatePassword = async (e) => {
     e.preventDefault();
     if (loading) return;

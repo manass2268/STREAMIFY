@@ -1,7 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
-// Apni Firebase console wali keys yahan dhyan se replace karna
+import { getDatabase } from "firebase/database";
+
 const firebaseConfig = {
   apiKey: "AIzaSyBET7ZUh5HpZJyHmVG98c16HA7Apo2nlUU",
   authDomain: "streamify-8bebc.firebaseapp.com",
@@ -9,14 +10,17 @@ const firebaseConfig = {
   storageBucket: "streamify-8bebc.firebasestorage.app",
   messagingSenderId: "896764474933",
   appId: "1:896764474933:web:5b9d65adebea855326e37c",
+  // YEH LINE ADD KARNA SABSE ZAROORI HAI 👇
+  databaseURL:
+    "https://streamify-8bebc-default-rtdb.asia-southeast1.firebasedatabase.app",
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
-
-// Google Auth ka setup (Jo tumhari file se miss ho gaya tha)
 const auth = getAuth(app);
+const db = getFirestore(app);
+const realtimeDb = getDatabase(app);
 const provider = new GoogleAuthProvider();
-export const db = getFirestore(app);
-// Ye export line zaroori hai taaki Login.jsx isko padh sake
-export { auth, provider };
+
+// Clean and single export for all services
+export { auth, db, provider, realtimeDb };
