@@ -2,23 +2,28 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logo from '../assets/logo1.png';
 import { auth, realtimeDb, db } from '../firebase';
-import { signOut, updateProfile } from 'firebase/auth';
+import { signOut, updateProfile, onAuthStateChanged } from 'firebase/auth'; // 🔥 onAuthStateChanged ADD KIYA HAI 🔥
 import { ref, set, onDisconnect } from 'firebase/database';
 import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 
 export default function Dashboard() {
-  const [showGate, setShowGate] = useState(true);
+  // 🔥 1. LOCAL STORAGE PERSISTENCE (Taaki refresh par wahi page khule) 🔥
+  const [showGate, setShowGate] = useState(() => {
+    const saved = localStorage.getItem('showGate');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') || 'home');
+  const [currentProfile, setCurrentProfile] = useState(() => localStorage.getItem('currentProfile') || null);
+
   const [pinProfile, setPinProfile] = useState(null);
   const [pinInput, setPinInput] = useState('');
   const [setupPin, setSetupPin] = useState('');
   const pinInputRef = useRef(null);
 
-  const [activeTab, setActiveTab] = useState('home');
   const [userData, setUserData] = useState({ name: 'Loading...', email: '', role: 'standard_user', plan: 'free', photoURL: '', uid: '' });
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   
   const [profiles, setProfiles] = useState([]);
-  const [currentProfile, setCurrentProfile] = useState(null);
   const [videoQuality, setVideoQuality] = useState('1080p Full HD');
   const [autoPlay, setAutoPlay] = useState(true);
 
@@ -38,6 +43,9 @@ export default function Dashboard() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
 
+  // Loading State
+  const [isProfileLoading, setIsProfileLoading] = useState(true);
+
   const [friendSearch, setFriendSearch] = useState('');
   const [friendsList, setFriendsList] = useState([
     { id: 1, name: 'Rahul Sharma', avatar: '👨‍🚀', isOnline: true, watching: 'Cyberpunk Chronicles' },
@@ -50,8 +58,15 @@ export default function Dashboard() {
 
   const showCustomToast = (message, type = 'success') => {
     setToast({ show: true, message, type });
-    setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3500);
+    setTimeout(() => setToast(prev => ({ ...prev, show: false })), 4000);
   };
+
+  // 🔥 2. STATE SAVE KARNE WALA EFFECT 🔥
+  useEffect(() => {
+    localStorage.setItem('showGate', JSON.stringify(showGate));
+    localStorage.setItem('activeTab', activeTab);
+    if (currentProfile) localStorage.setItem('currentProfile', currentProfile);
+  }, [showGate, activeTab, currentProfile]);
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 10);
@@ -59,58 +74,78 @@ export default function Dashboard() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // 🔥 3. AUTH STATE CHANGED HOOK (Refresh par data gayab hone ka 100% fix) 🔥
   useEffect(() => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) return;
-    
-    const userStatusRef = ref(realtimeDb, '/online_users/' + currentUser.uid);
-    set(userStatusRef, { name: currentUser.displayName || 'User', online: true, timestamp: Date.now() });
-    onDisconnect(userStatusRef).remove();
+    let unsubscribeFirestore = null;
+    let userStatusRef = null;
 
-    const userDocRef = doc(db, 'users', currentUser.uid);
-    const unsubscribeFirestore = onSnapshot(userDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setUserData({ 
-          uid: currentUser.uid, 
-          name: data.name || currentUser.displayName || 'User', 
-          email: data.email || currentUser.email || '', 
-          role: data.role || 'standard_user', 
-          plan: data.subscriptionPlan || 'free', 
-          photoURL: currentUser.photoURL || '' 
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        // User logged in hai, RTDB connect karo
+        userStatusRef = ref(realtimeDb, '/online_users/' + currentUser.uid);
+        set(userStatusRef, { name: currentUser.displayName || 'User', online: true, timestamp: Date.now() });
+        onDisconnect(userStatusRef).remove();
+
+        // Firestore Data Fetch
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        unsubscribeFirestore = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setUserData({ 
+              uid: currentUser.uid, 
+              name: data.name || currentUser.displayName || 'User', 
+              email: data.email || currentUser.email || '', 
+              role: data.role || 'standard_user', 
+              plan: data.subscriptionPlan || 'free', 
+              photoURL: currentUser.photoURL || '' 
+            });
+            setEditName(data.name || currentUser.displayName || '');
+            
+            if (data.profiles && Array.isArray(data.profiles) && data.profiles.length > 0) {
+              setProfiles(data.profiles);
+            } else {
+              const defaultProfile = [{ id: 1, name: currentUser.displayName || 'Main User', type: 'adult', avatar: '👑', pin: null }];
+              setDoc(userDocRef, { profiles: defaultProfile }, { merge: true });
+              setProfiles(defaultProfile);
+            }
+
+            if (data.settings) { 
+              if(data.settings.videoQuality) setVideoQuality(data.settings.videoQuality); 
+              if(data.settings.autoPlay !== undefined) setAutoPlay(data.settings.autoPlay); 
+            }
+          } else {
+            const defaultProfile = [{ id: 1, name: currentUser.displayName || 'Main User', type: 'adult', avatar: '👑', pin: null }];
+            setDoc(userDocRef, { 
+              name: currentUser.displayName || 'User', 
+              email: currentUser.email || '', 
+              role: 'standard_user', 
+              subscriptionPlan: 'free', 
+              profiles: defaultProfile, 
+              settings: { videoQuality: '1080p Full HD', autoPlay: true } 
+            }, { merge: true });
+            setProfiles(defaultProfile);
+          }
+          
+          setIsProfileLoading(false); // Data fetch ho gaya, loading band!
+        }, (error) => {
+          console.error("Firestore Sync Error:", error);
+          setIsProfileLoading(false);
+          showCustomToast("Sync Error: Please check database connection.", "error");
         });
-        setEditName(data.name || currentUser.displayName || '');
-        
-        if (data.profiles && Array.isArray(data.profiles) && data.profiles.length > 0) {
-          setProfiles(data.profiles);
-        } else {
-          const defaultProfile = [{ id: 1, name: currentUser.displayName || 'Main User', type: 'adult', avatar: '👑', pin: null }];
-          setDoc(userDocRef, { profiles: defaultProfile }, { merge: true });
-          setProfiles(defaultProfile);
-        }
 
-        if (data.settings) { 
-          if(data.settings.videoQuality) setVideoQuality(data.settings.videoQuality); 
-          if(data.settings.autoPlay !== undefined) setAutoPlay(data.settings.autoPlay); 
-        }
       } else {
-        const defaultProfile = [{ id: 1, name: currentUser.displayName || 'Main User', type: 'adult', avatar: '👑', pin: null }];
-        setDoc(userDocRef, { 
-          name: currentUser.displayName || 'User', 
-          email: currentUser.email || '', 
-          role: 'standard_user', 
-          subscriptionPlan: 'free', 
-          profiles: defaultProfile, 
-          settings: { videoQuality: '1080p Full HD', autoPlay: true } 
-        }, { merge: true });
-        setProfiles(defaultProfile);
+        // Agar user session expire ho gaya toh login par bhej do
+        setIsProfileLoading(false);
+        navigate('/login');
       }
-    }, (error) => {
-      console.error("Firestore Sync Error:", error);
     });
 
-    return () => { unsubscribeFirestore(); set(userStatusRef, null); };
-  }, []);
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeFirestore) unsubscribeFirestore();
+      if (userStatusRef) set(userStatusRef, null);
+    };
+  }, [navigate]);
 
   useEffect(() => {
     if (pinProfile && pinInputRef.current) pinInputRef.current.focus();
@@ -122,14 +157,15 @@ export default function Dashboard() {
 
     try {
       if (actionType === 'logout') {
-        await set(ref(realtimeDb, '/online_users/' + currentUser.uid), null); await signOut(auth); navigate('/login');
+        localStorage.clear(); // Logout par sab clear kar do
+        if (currentUser) await set(ref(realtimeDb, '/online_users/' + currentUser.uid), null); 
+        await signOut(auth); 
+        navigate('/login');
       } 
       else if (actionType === 'saveProfile') {
         if (!editName.trim() || !currentUser) return; setIsUpdating(true); await updateProfile(currentUser, { displayName: editName }); await updateDoc(doc(db, 'users', currentUser.uid), { name: editName });
         showCustomToast("Master profile upgraded successfully! 🚀", "success"); setShowProfileModal(false);
       } 
-      
-      // 🔥 LIGHTNING FAST OPTIMISTIC PROFILE CREATION 🔥
       else if (actionType === 'addProfile') {
         if (!newProfileName.trim()) {
           showCustomToast("Please enter a Profile Name!", "error");
@@ -145,24 +181,24 @@ export default function Dashboard() {
           pin: null 
         };
         
-        // 1. INSTANT LOCAL UPDATE
+        const previousProfiles = [...profiles]; 
         const updatedProfilesList = [...profiles, newObj];
-        setProfiles(updatedProfilesList);
+        setProfiles(updatedProfilesList); 
         
         setNewProfileName(''); 
         setNewProfileType('adult');
         setNewAvatar('😊');
         setShowAddProfileModal(false); 
-        showCustomToast(`Created Profile: ${newObj.name}! ✨`, "success");
 
-        // 2. BACKGROUND SERVER SYNC
         try {
           await setDoc(doc(db, 'users', currentUser.uid), { profiles: updatedProfilesList }, { merge: true });
+          showCustomToast(`Created Profile: ${newObj.name}! ✨ Saved to Cloud.`, "success");
         } catch (err) {
-          console.error("Background sync error:", err);
+          console.error("FIREBASE SYNC ERROR:", err);
+          setProfiles(previousProfiles);
+          showCustomToast(`Cloud Save Failed! Check Firestore Rules or Connection.`, "error");
         }
       } 
-
       else if (actionType === 'createRoom') {
         const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
         await set(ref(realtimeDb, 'rooms/' + roomId), { hostId: currentUser?.uid, hostName: userData.name, createdAt: Date.now(), status: 'waiting' });
@@ -270,7 +306,11 @@ export default function Dashboard() {
         {toast.show && <div className={`custom-toast animate-toast-slide ${toast.type}`}><span className="toast-icon">{toast.type === 'success' ? '✨' : '🛡️'}</span><span className="toast-msg">{toast.message}</span></div>}
         <div className="gate-header"><img src={logo} alt="Logo" className="gate-logo" /><span className="brand-text-colored">stream<span className="text-cyan">ify</span></span></div>
 
-        {pinProfile ? (
+        {isProfileLoading ? (
+          <div className="animate-pulse-glow" style={{ fontSize: '20px', marginTop: '50px', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#808080' }}>
+            Loading your profiles... 🍿
+          </div>
+        ) : pinProfile ? (
           <div className="pin-screen animate-fade-in">
             <p className="pin-subtitle">Profile Lock is currently on.</p><h1 className="pin-title">Enter your PIN to access this profile.</h1>
             <div className="pin-input-wrapper" onClick={() => pinInputRef.current?.focus()}>
@@ -306,14 +346,61 @@ export default function Dashboard() {
           .brand-text-colored { font-size: 28px; font-weight: 900; color: #a855f7; letter-spacing: 1px; }
           .brand-text-colored .text-cyan { color: #06b6d4; }
           .gate-main-title { font-size: 3.5vw; font-weight: 500; margin-bottom: 2em; text-align: center; }
-          .gate-profiles-grid { display: flex; gap: 2vw; justify-content: center; flex-wrap: wrap; max-width: 80%; }
-          .gate-profile-card { display: flex; flex-direction: column; align-items: center; gap: 10px; cursor: pointer; transition: 0.3s; position: relative; }
-          .gate-profile-card:hover .gate-avatar-box { border-color: white; }
-          .gate-profile-card:hover .gate-profile-name { color: white; }
-          .gate-avatar-box { width: 10vw; height: 10vw; min-width: 84px; min-height: 84px; max-width: 200px; max-height: 200px; border-radius: 4px; background: linear-gradient(135deg,#a855f7,#06b6d4); display: flex; align-items: center; justify-content: center; font-size: 4vw; border: 3px solid transparent; transition: 0.3s; }
+          .gate-profiles-grid { 
+            display: flex !important; 
+            flex-direction: row !important;
+            align-items: center !important; 
+            justify-content: center !important; 
+            gap: 35px !important;
+            flex-wrap: wrap !important; 
+            width: 100%;
+            max-width: 900px;
+            margin: 0 auto;
+          }
+
+          .gate-profile-card { 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            gap: 12px; 
+            cursor: pointer; 
+            transition: transform 0.25s ease-in-out; 
+          }
+
+          .gate-profile-card:hover {
+            transform: scale(1.08);
+          }
+
+          .gate-avatar-box { 
+            width: 130px !important; 
+            height: 130px !important; 
+            border-radius: 8px; 
+            background: linear-gradient(135deg, #a855f7, #06b6d4); 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-size: 55px; 
+            border: 3px solid transparent; 
+            transition: all 0.2s ease; 
+          }
+
+          .gate-profile-card:hover .gate-avatar-box {
+            border-color: #ffffff !important;
+          }
+
           .gate-add-box { background: transparent; border: 3px solid #808080; color: #808080; }
           .gate-profile-card:hover .gate-add-box { background: white; color: black; border-color: white; }
-          .gate-profile-name { font-size: 1.3vw; color: #808080; transition: 0.3s; margin-top: 5px; }
+
+          .gate-profile-name {
+            font-size: 16px !important;
+            color: #808080;
+            font-weight: 500;
+            transition: color 0.2s ease;
+          }
+
+          .gate-profile-card:hover .gate-profile-name {
+            color: #ffffff !important;
+          }
           .gate-lock-icon { font-size: 16px; margin-top: -5px; color: #808080; }
           .gate-manage-btn { background: transparent; border: 1px solid #808080; color: #808080; padding: 10px 24px; font-size: 18px; font-weight: 500; cursor: pointer; transition: 0.3s; letter-spacing: 1px; margin-top: 4em; }
           .gate-manage-btn:hover { border-color: white; color: white; }
@@ -349,13 +436,22 @@ export default function Dashboard() {
           .hs-kids-row { display: flex; justify-content: space-between; align-items: center; padding: 0 5px; color: #ccc; font-size: 15px; font-weight: 500; }
           .hs-fab { position: absolute; bottom: 40px; right: 30px; width: 60px; height: 60px; border-radius: 50%; background: linear-gradient(135deg, #007bff, #e50914); border: none; color: white; font-size: 24px; display: flex; justify-content: center; align-items: center; cursor: pointer; box-shadow: 0 10px 25px rgba(229,9,20,0.4); transition: 0.3s; }
           .hs-fab:hover { transform: scale(1.08); box-shadow: 0 15px 35px rgba(229,9,20,0.6); }
-          .switch-toggle { position: relative; display: inline-block; width: 50px; height: 26px; }
-          .switch-toggle input { opacity: 0; width: 0; height: 0; }
-          .slider-round { position: absolute; cursor: pointer; inset: 0; background-color: #808080; transition: 0.3s; border-radius: 34px; }
-          .slider-round:before { position: absolute; content: ""; height: 20px; width: 20px; left: 3px; bottom: 3px; background-color: #fff; transition: 0.3s; border-radius: 50%; box-shadow: 0 2px 5px rgba(0,0,0,0.4); }
-          input:checked + .slider-round { background: #e50914; }
-          input:checked + .slider-round:before { transform: translateX(24px); }
-          @media (max-width: 900px) { .gate-main-title { font-size: 24px; } .gate-profile-name { font-size: 14px; } .gate-avatar-box { min-width: 70px; min-height: 70px; font-size: 28px; } }
+
+          @keyframes scaleUp{from{opacity:0;transform:scale(0.95);}to{opacity:1;transform:scale(1);}} .animate-scale-up { animation: scaleUp 0.3s cubic-bezier(0.16,1,0.3,1) forwards; }
+          @keyframes slideUpFade{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}} .animate-slide-up { animation: slideUpFade 0.5s cubic-bezier(0.16,1,0.3,1) forwards; }
+          @keyframes fadeIn{from{opacity:0;}to{opacity:1;}} .animate-fade-in { animation: fadeIn 0.3s ease forwards; }
+
+          @media (max-width: 900px) {
+            .net-navbar { padding: 0 15px; }
+            .net-nav-links { display: none; }
+            .net-brand { font-size: 20px; }
+            .net-search-box input { width: 120px; }
+            .cinematic-title { font-size: 40px; }
+            .title-sub { font-size: 25px; }
+            .hero-content { margin-top: 20px; }
+          }
+          .animate-pulse-glow { animation: pulseGlowText 1.5s infinite alternate; }
+          @keyframes pulseGlowText { from { opacity: 0.5; text-shadow: 0 0 10px rgba(255,255,255,0.2); } to { opacity: 1; text-shadow: 0 0 20px rgba(255,255,255,0.8); } }
         `}</style>
       </div>
     );
@@ -822,6 +918,8 @@ export default function Dashboard() {
           .title-sub { font-size: 25px; }
           .hero-content { margin-top: 20px; }
         }
+        .animate-pulse-glow { animation: pulseGlowText 1.5s infinite alternate; }
+        @keyframes pulseGlowText { from { opacity: 0.5; text-shadow: 0 0 10px rgba(255,255,255,0.2); } to { opacity: 1; text-shadow: 0 0 20px rgba(255,255,255,0.8); } }
       `}</style>
     </div>
   );
