@@ -2,9 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import logo from '../assets/logo1.png';
 import { auth, realtimeDb, db } from '../firebase';
-import { signOut, updateProfile, onAuthStateChanged } from 'firebase/auth';
+import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { ref, set, onDisconnect } from 'firebase/database';
 import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+
+// 🔥 WATCH PARTY KO YAHAN IMPORT KIYA HAI 🔥
+import WatchParty from './WatchParty';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -18,8 +21,6 @@ export default function Dashboard() {
   });
   const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') || 'home');
   const [isScrolled, setIsScrolled] = useState(false);
-  
-  // 🔥 FIX: Loading State wapas add kar diya
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
   
@@ -27,16 +28,17 @@ export default function Dashboard() {
   const [profiles, setProfiles] = useState([]);
   const [currentProfile, setCurrentProfile] = useState(() => localStorage.getItem('currentProfile') || null);
   
+  // Modal States
   const [showAddProfileModal, setShowAddProfileModal] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
   const [newProfileName, setNewProfileName] = useState('');
   const [newAvatar, setNewAvatar] = useState('😊');
   const avatarOptions = ['👩', '👨‍🚀', '😊', '🐼', '🧛‍♂️'];
+  const [isUpdating, setIsUpdating] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
 
-  // TMDB CATEGORY STATES
+  // 🔥 TMDB CATEGORY STATES 🔥
   const [heroMovie, setHeroMovie] = useState(null);
   const [movieData, setMovieData] = useState({
     trending: [], topRated: [], action: [], comedy: [], 
@@ -46,7 +48,6 @@ export default function Dashboard() {
 
   const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"; 
   const API_KEY = "4e2f2d31c8fd1c86574cd70c54d9dbbd"; 
-
   const currentProfObj = profiles.find(p => p.name === currentProfile);
 
   // ==========================================
@@ -74,13 +75,11 @@ export default function Dashboard() {
   const [visibleRows, setVisibleRows] = useState([]);
   const bottomBoundaryRef = useRef(null);
 
-  useEffect(() => {
-    setVisibleRows(currentProfile === 'Kids' ? baseKidsRows : baseAdultRows);
-  }, [currentProfile]);
+  useEffect(() => { setVisibleRows(currentProfile === 'Kids' ? baseKidsRows : baseAdultRows); }, [currentProfile]);
 
   const loadMoreRows = useCallback(() => {
     setVisibleRows(prev => {
-      if (prev.length > 30) return prev; 
+      if (prev.length > 30) return prev; // Limit to prevent crashing
       const base = currentProfile === 'Kids' ? baseKidsRows : baseAdultRows;
       const appendedRows = base.map(row => ({ ...row, id: row.id + '_' + Date.now() + Math.random() }));
       return [...prev, ...appendedRows];
@@ -89,23 +88,14 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!bottomBoundaryRef.current) return;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting) {
-          loadMoreRows();
-        }
-      },
-      { rootMargin: '800px', threshold: 0 }
-    );
+    const observer = new IntersectionObserver((entries) => { if (entries[0].isIntersecting) loadMoreRows(); }, { rootMargin: '800px', threshold: 0 });
     observer.observe(bottomBoundaryRef.current);
     return () => observer.disconnect();
   }, [loadMoreRows]);
 
-
   // ==========================================
-  // 2. LIFECYCLE HOOKS (API FETCHING)
+  // 2. API FETCHING & SEARCH
   // ==========================================
-
   useEffect(() => {
     const fetchAllMovies = async () => {
       try {
@@ -140,9 +130,7 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setSearchResults([]); return;
-    }
+    if (searchQuery.trim() === '') { setSearchResults([]); return; }
     const fetchSearch = async () => {
       try {
         const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${API_KEY}&language=en-US&query=${searchQuery}&page=1`);
@@ -166,7 +154,6 @@ export default function Dashboard() {
     if (currentProfile) localStorage.setItem('currentProfile', currentProfile);
   }, [showGate, activeTab, currentProfile]);
 
-  // 🔥 FIX: Firebase Authentication & Profile Setup 🔥
   useEffect(() => {
     let unsubscribeFirestore = null;
     let userStatusRef = null;
@@ -182,71 +169,59 @@ export default function Dashboard() {
           if (docSnap.exists()) {
             const data = docSnap.data();
             setUserData({ uid: currentUser.uid, name: data.name || currentUser.displayName || 'User', email: data.email || currentUser.email || '' });
-            
-            if (data.profiles && data.profiles.length > 0) {
-              setProfiles(data.profiles);
-            } else {
-              const defaultProfile = [{ id: 1, name: currentUser.displayName || 'Main User', type: 'adult', avatar: '👑', pin: null }];
-              setDoc(userDocRef, { profiles: defaultProfile }, { merge: true });
-              setProfiles(defaultProfile);
+            if (data.profiles && data.profiles.length > 0) setProfiles(data.profiles);
+            else {
+              const defaultProfile = [{ id: 1, name: currentUser.displayName || 'Main', type: 'adult', avatar: '👑', pin: null }];
+              setDoc(userDocRef, { profiles: defaultProfile }, { merge: true }); setProfiles(defaultProfile);
             }
           } else {
-             const defaultProfile = [{ id: 1, name: currentUser.displayName || 'Main User', type: 'adult', avatar: '👑', pin: null }];
+             const defaultProfile = [{ id: 1, name: currentUser.displayName || 'Main', type: 'adult', avatar: '👑', pin: null }];
              setDoc(userDocRef, { name: currentUser.displayName || 'User', email: currentUser.email || '', profiles: defaultProfile }, { merge: true });
              setProfiles(defaultProfile);
           }
-          setIsProfileLoading(false); // Stop loading animation
+          setIsProfileLoading(false);
         });
-      } else {
-        setIsProfileLoading(false);
-        navigate('/login');
-      }
+      } else { setIsProfileLoading(false); navigate('/login'); }
     });
-
-    return () => {
-      unsubscribeAuth();
-      if (unsubscribeFirestore) unsubscribeFirestore();
-      if (userStatusRef) set(userStatusRef, null);
-    };
+    return () => { unsubscribeAuth(); if (unsubscribeFirestore) unsubscribeFirestore(); if (userStatusRef) set(userStatusRef, null); };
   }, [navigate]);
 
-  const showCustomToast = (message, type = 'success') => {
-    setToast({ show: true, message, type });
-    setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3500);
-  };
-
-  // 🔥 FIX: Add Profile and Logout Logic 🔥
-  const handleAction = async (actionType, e = null) => {
-    if (e) e.preventDefault();
+  const showCustomToast = (message, type = 'success') => { setToast({ show: true, message, type }); setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3500); };
+  
+  // 🔥 ACTION HANDLER (Handles Logout & Add Profile) 🔥
+  const handleAction = async (actionType, e = null) => { 
+    if (e) e.preventDefault(); 
     const currentUser = auth.currentUser;
-
-    try {
+    
+    if (actionType === 'logout') { 
+      localStorage.clear(); 
+      if (currentUser) await set(ref(realtimeDb, '/online_users/' + currentUser.uid), null);
+      await signOut(auth); 
+      navigate('/login'); 
+    } 
+    else if (actionType === 'addProfile') {
+      if (!newProfileName.trim()) return showCustomToast("Please enter a Profile Name!", "error");
       setIsUpdating(true);
-      if (actionType === 'logout') {
-        localStorage.clear(); 
-        if (currentUser) await set(ref(realtimeDb, '/online_users/' + currentUser.uid), null); 
-        await signOut(auth); 
-        navigate('/login');
-      } 
-      else if (actionType === 'addProfile') {
-        if (!newProfileName.trim()) return showCustomToast("Please enter a Profile Name!", "error");
+      try {
         const newObj = { id: Date.now(), name: newProfileName.trim(), type: 'adult', avatar: newAvatar, pin: null };
         const updatedProfilesList = [...profiles, newObj];
         setProfiles(updatedProfilesList); 
         setNewProfileName(''); setNewAvatar('😊'); setShowAddProfileModal(false); 
         await updateDoc(doc(db, 'users', currentUser.uid), { profiles: updatedProfilesList });
         showCustomToast(`Created Profile: ${newObj.name}! ✨`, "success");
+      } catch (error) {
+        showCustomToast("Failed to add profile", "error");
+      } finally {
+        setIsUpdating(false);
       }
-    } catch (error) { showCustomToast(`Action Failed!`, "error"); } 
-    finally { setIsUpdating(false); }
+    }
   };
 
-  const handleProfileClick = (profile) => {
-    setCurrentProfile(profile.name); setShowGate(false); 
-  };
+  const handleProfileClick = (profile) => { setCurrentProfile(profile.name); setShowGate(false); };
+
 
   // ==========================================
-  // 4. MINI COMPONENTS (EXACT NETFLIX CARDS)
+  // 4. MINI COMPONENTS (NETFLIX CARDS)
   // ==========================================
 
   const NetflixCard = React.memo(({ movie, index, isTop10 }) => {
@@ -265,30 +240,20 @@ export default function Dashboard() {
             const data = await res.json();
             if (data.results && data.results.length > 0) {
               const trailer = data.results.find(vid => vid.site === "YouTube" && vid.type === "Trailer") || data.results.find(vid => vid.site === "YouTube");
-              if (trailer) {
-                setTrailerKey(trailer.key);
-                setShowTrailer(true);
-              }
+              if (trailer) { setTrailerKey(trailer.key); setShowTrailer(true); }
             }
           } catch (e) {}
-        } else {
-          setShowTrailer(true);
-        }
+        } else { setShowTrailer(true); }
       }, 1500); 
     };
 
-    const handleMouseLeave = () => {
-      setIsHovered(false);
-      setShowTrailer(false);
-      clearTimeout(hoverTimeoutRef.current);
-    };
+    const handleMouseLeave = () => { setIsHovered(false); setShowTrailer(false); clearTimeout(hoverTimeoutRef.current); };
 
     const imagePath = movie.backdrop_path || movie.poster_path;
     if (!imagePath) return null;
 
     const title = movie.title || movie.name || "Unknown";
     const isTV = movie.first_air_date ? true : false;
-    
     let originClass = "origin-center";
     if (index % 10 === 0) originClass = "origin-left"; 
     else if (index % 10 === 9) originClass = "origin-right";
@@ -314,10 +279,7 @@ export default function Dashboard() {
             </div>
             <button className="ncd-btn round-btn info-btn" title="More Info"><svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"></path></svg></button>
           </div>
-          <div className="ncd-meta">
-            <span className="ncd-match">98% Match</span><span className="ncd-age-badge">A</span><span className="dot">•</span>
-            <span>{isTV ? '6 Episodes' : '2h 15m'}</span><span className="dot">•</span><span className="ncd-hd-badge">HD</span>
-          </div>
+          <div className="ncd-meta"><span className="ncd-match">98% Match</span><span className="ncd-age-badge">A</span><span className="dot">•</span><span>{isTV ? '6 Episodes' : '2h 15m'}</span><span className="dot">•</span><span className="ncd-hd-badge">HD</span></div>
           <div className="ncd-genres">Gritty <span className="pipe">|</span> Action <span className="pipe">|</span> Thriller</div>
         </div>
       </div>
@@ -329,9 +291,7 @@ export default function Dashboard() {
     const [showLeftArrow, setShowLeftArrow] = useState(false);
     const [loopedMovies, setLoopedMovies] = useState([]);
 
-    useEffect(() => {
-      if (movies && movies.length > 0) setLoopedMovies([...movies, ...movies]);
-    }, [movies]);
+    useEffect(() => { if (movies && movies.length > 0) setLoopedMovies([...movies, ...movies]); }, [movies]);
 
     const scroll = (direction) => {
       if (rowRef.current) {
@@ -348,7 +308,6 @@ export default function Dashboard() {
         }
       }
     };
-
     if (!movies || movies.length === 0) return null;
 
     return (
@@ -369,16 +328,12 @@ export default function Dashboard() {
   // 5. MAIN RENDER (UI)
   // ==========================================
 
-  // 🔥 FIX: Restored the Gate UI with Loading and Add Profile 🔥
   if (showGate) {
     return (
       <div className="gate-container">
         <div className="gate-header"><img src={logo} alt="Logo" className="gate-logo" /><span className="brand-text-colored">stream<span className="text-cyan">ify</span></span></div>
-        
         {isProfileLoading ? (
-          <div className="animate-pulse-glow" style={{ fontSize: '20px', color: '#808080', marginTop: '30vh' }}>
-            Loading your cinematic profiles... 🍿
-          </div>
+          <div className="animate-pulse-glow" style={{ fontSize: '20px', color: '#808080', marginTop: '30vh' }}>Loading your cinematic profiles... 🍿</div>
         ) : (
           <div className="profiles-screen animate-fade-in">
             <h1 className="gate-main-title">Who's watching?</h1>
@@ -389,7 +344,8 @@ export default function Dashboard() {
                   <span className="gate-profile-name">{p.name}</span>
                 </div>
               ))}
-              {/* Add Profile Button */}
+              
+              {/* Add Profile Box */}
               <div className="gate-profile-card" onClick={() => setShowAddProfileModal(true)}>
                 <div className="gate-avatar-box gate-add-box">+</div>
                 <span className="gate-profile-name">Add Profile</span>
@@ -398,7 +354,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Modal for Adding Profile */}
+        {/* Create Profile Modal */}
         {showAddProfileModal && (
           <div className="hs-modal-overlay animate-fade-in">
             <div className="hs-modal-content">
@@ -413,7 +369,10 @@ export default function Dashboard() {
                     <div key={av} className={`hs-avatar ${newAvatar === av ? 'selected' : ''}`} onClick={() => setNewAvatar(av)}>{av}</div>
                   ))}
                 </div>
-                <div className="hs-input-group"><input type="text" value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)} required autoFocus /><label>Profile Alias</label></div>
+                <div className="hs-input-group">
+                  <input type="text" value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)} required autoFocus />
+                  <label>Profile Alias</label>
+                </div>
                 <button type="submit" className="hs-fab" disabled={isUpdating}>✓</button>
               </form>
             </div>
@@ -436,6 +395,7 @@ export default function Dashboard() {
             <li className={activeTab === 'home' ? 'active' : ''} onClick={() => {setActiveTab('home'); setSearchQuery('');}}>Home</li>
             <li onClick={() => showCustomToast('TV Shows coming soon')}>TV Shows</li>
             <li onClick={() => showCustomToast('Movies coming soon')}>Movies</li>
+            <li className={activeTab === 'watchparty' ? 'active' : ''} onClick={() => setActiveTab('watchparty')}>Watch Party 🍿</li>
           </ul>
         </div>
         <div className="net-nav-right">
@@ -451,6 +411,8 @@ export default function Dashboard() {
       </nav>
 
       <main className="main-content">
+        
+        {/* --- DYNAMIC TMDB TAB: HOME --- */}
         {activeTab === 'home' && (
           <div className="tab-content animate-fade-in">
             {searchQuery.trim() !== '' ? (
@@ -466,20 +428,12 @@ export default function Dashboard() {
               </div>
             ) : (
               <>
-                <div className="net-hero-banner" style={{ 
-                  backgroundImage: heroMovie?.backdrop_path ? `url(https://image.tmdb.org/t/p/original${heroMovie.backdrop_path})` : 'url(https://images.unsplash.com/photo-1605806616949-1e87b487cb2a?q=80&w=2000)'
-                }}>
+                <div className="net-hero-banner" style={{ backgroundImage: heroMovie?.backdrop_path ? `url(https://image.tmdb.org/t/p/original${heroMovie.backdrop_path})` : 'url(https://images.unsplash.com/photo-1605806616949-1e87b487cb2a?q=80&w=2000)' }}>
                   <div className="net-hero-vignette"></div>
                   <div className="net-hero-content">
                     <h1 className="cinematic-title">{heroMovie?.title || heroMovie?.name || "Loading..."}</h1>
-                    <div className="net-hero-meta">
-                      <span className="net-match">Top 10 in India Today</span>
-                      <span className="net-age">U/A 16+</span>
-                      <span className="net-hd">4K Ultra HD</span>
-                    </div>
-                    <p className="net-hero-desc">
-                      {heroMovie?.overview ? (heroMovie.overview.length > 180 ? heroMovie.overview.substring(0, 180) + "..." : heroMovie.overview) : "Fetching live data from TMDB..."}
-                    </p>
+                    <div className="net-hero-meta"><span className="net-match">Top 10 in India Today</span><span className="net-age">U/A 16+</span><span className="net-hd">4K Ultra HD</span></div>
+                    <p className="net-hero-desc">{heroMovie?.overview ? (heroMovie.overview.length > 180 ? heroMovie.overview.substring(0, 180) + "..." : heroMovie.overview) : "Fetching live data from TMDB..."}</p>
                     <div className="net-hero-buttons">
                       <button className="net-btn-play"><span>▶</span> Play</button>
                       <button className="net-btn-info"><span>ⓘ</span> More Info</button>
@@ -491,14 +445,22 @@ export default function Dashboard() {
                   {visibleRows.map((row) => (
                     <NetflixRow key={row.id} title={row.title} movies={movieData[row.dataKey]} isTop10Row={row.isTop10} />
                   ))}
-                  
-                  {/* Invisible boundary to load rows seamlessly */}
                   <div ref={bottomBoundaryRef} style={{ width: '100%', height: '5px', background: 'transparent' }}></div>
                 </div>
               </>
             )}
           </div>
         )}
+
+        {/* --- WATCH PARTY TAB (Now Linked Correctly!) --- */}
+        {activeTab === 'watchparty' && (
+          <WatchParty 
+             heroMovie={heroMovie} 
+             showCustomToast={showCustomToast} 
+             TMDB_IMAGE_BASE_URL={TMDB_IMAGE_BASE_URL} 
+          />
+        )}
+
       </main>
       <InlineStyles />
     </div>
@@ -529,20 +491,9 @@ const InlineStyles = () => (
     .net-nav-left, .net-nav-right { display: flex; align-items: center; gap: 20px; }
     .net-brand { display: flex; align-items: center; gap: 5px; cursor: pointer; }
     .brand-img { height: 28px; filter: drop-shadow(0 0 5px rgba(6,182,212,0.5)); }
-    .brand-text-colored { 
-      font-size: 26px; 
-      font-weight: 900; 
-      color: #ffffff; 
-      letter-spacing: 1px; 
-      text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
-    }
+    .brand-text-colored { font-size: 26px; font-weight: 900; color: #ffffff; letter-spacing: 1px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); }
+    .brand-text-colored .text-cyan { background: linear-gradient(to right, #a855f7, #00d2ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display: inline-block; }
     
-    .brand-text-colored .text-cyan { 
-      background: linear-gradient(to right, #a855f7, #00d2ff);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      display: inline-block;
-    }
     .net-nav-links { display: flex; list-style: none; gap: 20px; margin-left: 20px; }
     .net-nav-links li { font-size: 14px; font-weight: 500; color: #e5e5e5; cursor: pointer; transition: 0.3s; }
     .net-nav-links li:hover, .net-nav-links li.active { color: #ffffff; font-weight: bold; }
@@ -608,7 +559,6 @@ const InlineStyles = () => (
     .net-movie-title-overlay { position: absolute; bottom: 5px; left: 10px; right: 10px; font-weight: bold; font-size: 14px; text-shadow: 1px 1px 3px black; z-index: 5; text-align: center; opacity: 1; transition: 0.3s;}
     
     .net-top10-badge { position: absolute; top: 0; left: 0; background: #e50914; color: white; padding: 4px 6px; font-size: 10px; font-weight: 900; line-height: 1.1; border-bottom-right-radius: 4px; border-top-left-radius: 4px; text-align: center; z-index: 15; box-shadow: 2px 2px 5px rgba(0,0,0,0.5); }
-    
     .recently-added-badge { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); background: #e50914; color: white; padding: 4px 10px; font-size: 11px; font-weight: bold; border-top-left-radius: 4px; border-top-right-radius: 4px; z-index: 10; opacity: 0; transition: opacity 0.3s; white-space: nowrap; box-shadow: 0 -2px 5px rgba(0,0,0,0.5); }
 
     .netflix-card-details { position: absolute; top: 100%; left: 0; right: 0; background-color: #181818; padding: 15px; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; opacity: 0; visibility: hidden; transition: opacity 0.2s ease, visibility 0.2s ease; box-shadow: 0 15px 25px rgba(0,0,0,0.9); z-index: 100; border: 1px solid #333; border-top: none; display: flex; flex-direction: column; gap: 12px; }
@@ -637,38 +587,25 @@ const InlineStyles = () => (
 
     .search-results-grid { display: flex; flex-wrap: wrap; gap: 20px; padding: 0 4%; justify-content: flex-start; overflow-y: visible; padding-top: 40px; margin-top: -40px;}
 
-    /* MODAL STYLES RE-ADDED */
-    .hs-modal-overlay { position: fixed; inset: 0; background: #0a0a0c; z-index: 3000; display: flex; justify-content: center; align-items: center; }
-    .hs-modal-content { width: 100%; max-width: 450px; height: 100vh; max-height: 600px; background: #141414; display: flex; flex-direction: column; padding: 25px; position: relative; box-shadow: 0 0 50px rgba(0,0,0,0.8); border: 1px solid #333; border-radius: 8px;}
-    .hs-header { display: flex; justify-content: space-between; align-items: center; padding-top: 10px; margin-bottom: 50px; }
-    .hs-back-btn { background: transparent; border: none; color: white; font-size: 26px; cursor: pointer; transition: 0.2s; }
-    .hs-back-btn:hover { color: #e50914; }
-    .hs-header h2 { font-size: 20px; font-weight: 600; color: white; }
-    .hs-avatar-container { display: flex; gap: 20px; justify-content: center; align-items: center; margin-bottom: 60px; overflow-x: auto; padding-bottom: 15px; scrollbar-width: none; }
+    /* Modal Styles */
+    .hs-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000; display: flex; justify-content: center; align-items: center; }
+    .hs-modal-content { width: 100%; max-width: 450px; background: #141414; display: flex; flex-direction: column; padding: 25px; border-radius: 8px; border: 1px solid #333; }
+    .hs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+    .hs-back-btn { background: transparent; border: none; color: white; font-size: 26px; cursor: pointer; }
+    .hs-header h2 { font-size: 20px; color: white; }
+    .hs-avatar-container { display: flex; gap: 20px; justify-content: center; margin-bottom: 30px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
     .hs-avatar-container::-webkit-scrollbar { display: none; }
-    .hs-avatar { min-width: 60px; height: 60px; border-radius: 50%; background: #1a1a24; display: flex; justify-content: center; align-items: center; font-size: 30px; cursor: pointer; opacity: 0.5; transition: 0.3s; filter: grayscale(80%); }
-    .hs-avatar.selected { min-width: 90px; height: 90px; opacity: 1; filter: grayscale(0%); border: 3px solid white; background: linear-gradient(135deg, #007bff, #e50914); font-size: 45px; box-shadow: 0 0 25px rgba(229,9,20,0.4); }
-    .hs-input-group { position: relative; margin-bottom: 35px; }
-    .hs-input-group input { width: 100%; background: transparent; border: 1.5px solid #444; border-radius: 4px; padding: 18px 15px; color: white; font-size: 16px; outline: none; transition: 0.3s; }
+    .hs-avatar { min-width: 60px; height: 60px; border-radius: 50%; background: #222; display: flex; justify-content: center; align-items: center; font-size: 30px; cursor: pointer; opacity: 0.5; transition: 0.3s; }
+    .hs-avatar.selected { opacity: 1; border: 3px solid white; background: linear-gradient(135deg, #007bff, #e50914); transform: scale(1.1); box-shadow: 0 0 15px rgba(229,9,20,0.4); }
+    .hs-input-group { position: relative; margin-bottom: 30px; }
+    .hs-input-group input { width: 100%; background: transparent; border: 1.5px solid #444; border-radius: 4px; padding: 18px 15px; color: white; font-size: 16px; outline: none; }
     .hs-input-group input:focus { border-color: white; }
-    .hs-input-group label { position: absolute; top: -10px; left: 15px; background: #141414; padding: 0 5px; font-size: 13px; color: #888; font-weight: 500; transition: 0.3s; }
-    .hs-input-group input:focus + label { color: white; }
-    .hs-fab { position: absolute; bottom: 40px; right: 30px; width: 60px; height: 60px; border-radius: 50%; background: #e50914; border: none; color: white; font-size: 24px; display: flex; justify-content: center; align-items: center; cursor: pointer; box-shadow: 0 10px 25px rgba(229,9,20,0.4); transition: 0.3s; }
-    .hs-fab:hover { transform: scale(1.08); background: #f40612;}
-    .animate-pulse-glow { animation: pulseGlowText 1.5s infinite alternate; }
-    @keyframes pulseGlowText { from { opacity: 0.5; text-shadow: 0 0 10px rgba(255,255,255,0.2); } to { opacity: 1; text-shadow: 0 0 20px rgba(255,255,255,0.8); } }
+    .hs-input-group label { position: absolute; top: -10px; left: 15px; background: #141414; padding: 0 5px; font-size: 13px; color: #888; }
+    .hs-fab { width: 100%; padding: 15px; border-radius: 4px; background: #e50914; border: none; color: white; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+    .hs-fab:hover { background: #f40612; }
 
-    @media (max-width: 900px) {
-      .netflix-card-container { min-width: 150px; width: 150px; height: 85px; }
-      .cinematic-title { font-size: 30px; }
-      .net-hero-desc { font-size: 14px; }
-      .net-hero-content { max-width: 80%; }
-    }
-
-    .custom-toast { position: fixed; top: 80px; right: 30px; z-index: 9999; background: rgba(14,14,22,0.9); backdrop-filter: blur(25px); border: 1px solid rgba(229,9,20,0.5); padding: 16px 24px; border-radius: 8px; display: flex; align-items: center; gap: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.85); font-weight: 600; font-size: 14px; }
-    .animate-toast-slide { animation: toastSlide 0.35s cubic-bezier(0.16,1,0.3,1) forwards; }
-    @keyframes toastSlide{from{opacity:0;transform:translateY(-30px) scale(0.95);}to{opacity:1;transform:translateY(0) scale(1);}}
-    
+    .animate-fade-in { animation: fadeIn 0.3s ease forwards; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
     .gate-container { width: 100vw; height: 100vh; background: #141414; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
     .gate-header { position: absolute; top: 30px; left: 4%; display: flex; align-items: center; gap: 10px; }
     .gate-logo { height: 36px; filter: drop-shadow(0 0 8px rgba(6,182,212,0.5)); }
