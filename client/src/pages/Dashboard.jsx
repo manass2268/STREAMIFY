@@ -79,7 +79,7 @@ export default function Dashboard() {
 
   const loadMoreRows = useCallback(() => {
     setVisibleRows(prev => {
-      if (prev.length > 30) return prev; // Limit to prevent crashing
+      if (prev.length > 30) return prev; 
       const base = currentProfile === 'Kids' ? baseKidsRows : baseAdultRows;
       const appendedRows = base.map(row => ({ ...row, id: row.id + '_' + Date.now() + Math.random() }));
       return [...prev, ...appendedRows];
@@ -124,7 +124,11 @@ export default function Dashboard() {
         newObj.kidsRev = [...newObj.kids].reverse();
         setMovieData(newObj);
         if (newObj.trending.length > 0) setHeroMovie(newObj.trending[Math.floor(Math.random() * newObj.trending.length)]);
-      } catch (error) { console.error("TMDB Fetch Error"); }
+      } catch (error) { 
+        console.error("TMDB Fetch Error", error);
+        // Fallback agar mobile network slow ho
+        setHeroMovie({ title: 'Streamify Originals', overview: 'Welcome to Streamify. Explore thousands of movies and TV shows below.', backdrop_path: null });
+      }
     };
     fetchAllMovies();
   }, []);
@@ -188,7 +192,6 @@ export default function Dashboard() {
 
   const showCustomToast = (message, type = 'success') => { setToast({ show: true, message, type }); setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3500); };
   
-  // 🔥 ACTION HANDLER (Handles Logout & Add Profile) 🔥
   const handleAction = async (actionType, e = null) => { 
     if (e) e.preventDefault(); 
     const currentUser = auth.currentUser;
@@ -390,7 +393,11 @@ export default function Dashboard() {
 
       <nav className={`net-navbar ${isScrolled || activeTab !== 'home' ? 'scrolled' : ''}`}>
         <div className="net-nav-left">
-          <div className="net-brand" onClick={() => setShowGate(true)}><img src={logo} alt="Logo" className="brand-img" /><span className="brand-text-colored">stream<span className="text-cyan">ify</span></span></div>
+          <div className="net-brand" onClick={() => setShowGate(true)}>
+             <img src={logo} alt="Logo" className="brand-img" />
+             <span className="brand-text-colored">stream<span className="text-cyan">ify</span></span>
+          </div>
+          {/* Mobile me yeh links gayab ho jayenge automatically CSS se */}
           <ul className="net-nav-links">
             <li className={activeTab === 'home' ? 'active' : ''} onClick={() => {setActiveTab('home'); setSearchQuery('');}}>Home</li>
             <li onClick={() => showCustomToast('TV Shows coming soon')}>TV Shows</li>
@@ -432,7 +439,11 @@ export default function Dashboard() {
                   <div className="net-hero-vignette"></div>
                   <div className="net-hero-content">
                     <h1 className="cinematic-title">{heroMovie?.title || heroMovie?.name || "Loading..."}</h1>
-                    <div className="net-hero-meta"><span className="net-match">Top 10 in India Today</span><span className="net-age">U/A 16+</span><span className="net-hd">4K Ultra HD</span></div>
+                    <div className="net-hero-meta">
+                      <span className="net-match">Top 10 in India Today</span>
+                      <span className="net-age">U/A 16+</span>
+                      <span className="net-hd">4K Ultra HD</span>
+                    </div>
                     <p className="net-hero-desc">{heroMovie?.overview ? (heroMovie.overview.length > 180 ? heroMovie.overview.substring(0, 180) + "..." : heroMovie.overview) : "Fetching live data from TMDB..."}</p>
                     <div className="net-hero-buttons">
                       <button className="net-btn-play"><span>▶</span> Play</button>
@@ -452,10 +463,9 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* --- WATCH PARTY TAB (Now Linked Correctly!) --- */}
+        {/* --- WATCH PARTY TAB --- */}
         {activeTab === 'watchparty' && (
           <WatchParty 
-             heroMovie={heroMovie} 
              showCustomToast={showCustomToast} 
              TMDB_IMAGE_BASE_URL={TMDB_IMAGE_BASE_URL} 
           />
@@ -468,7 +478,7 @@ export default function Dashboard() {
 }
 
 // ==========================================
-// 6. STYLES COMPONENT (CSS MAGIC)
+// 6. STYLES COMPONENT (CSS MAGIC WITH MOBILE FIXES)
 // ==========================================
 const InlineStyles = () => (
   <style>{`
@@ -489,13 +499,14 @@ const InlineStyles = () => (
     .net-navbar { position: fixed; top: 0; left: 0; width: 100%; height: 68px; padding: 0 4%; display: flex; justify-content: space-between; align-items: center; z-index: 2000; transition: background-color 0.4s ease; background: linear-gradient(to bottom, rgba(0,0,0,0.8) 10%, rgba(0,0,0,0)); }
     .net-navbar.scrolled { background-color: #141414; box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
     .net-nav-left, .net-nav-right { display: flex; align-items: center; gap: 20px; }
-    .net-brand { display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    
+    .net-brand { display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
     .brand-img { height: 28px; filter: drop-shadow(0 0 5px rgba(6,182,212,0.5)); }
-    .brand-text-colored { font-size: 26px; font-weight: 900; color: #ffffff; letter-spacing: 1px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); }
+    .brand-text-colored { font-size: 26px; font-weight: 900; color: #ffffff; letter-spacing: 1px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); white-space: nowrap;}
     .brand-text-colored .text-cyan { background: linear-gradient(to right, #a855f7, #00d2ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display: inline-block; }
     
     .net-nav-links { display: flex; list-style: none; gap: 20px; margin-left: 20px; }
-    .net-nav-links li { font-size: 14px; font-weight: 500; color: #e5e5e5; cursor: pointer; transition: 0.3s; }
+    .net-nav-links li { font-size: 14px; font-weight: 500; color: #e5e5e5; cursor: pointer; transition: 0.3s; white-space: nowrap;}
     .net-nav-links li:hover, .net-nav-links li.active { color: #ffffff; font-weight: bold; }
     
     .net-search-box { display: flex; align-items: center; background: rgba(0,0,0,0.75); border: 1px solid #ffffff; padding: 5px 12px; border-radius: 4px; gap: 8px; }
@@ -508,7 +519,7 @@ const InlineStyles = () => (
     .net-hero-vignette { position: absolute; inset: 0; background: linear-gradient(to right, rgba(20,20,20,0.9) 0%, rgba(20,20,20,0.2) 50%, transparent 100%), linear-gradient(to top, #141414 0%, transparent 25%); z-index: 1; }
     .net-hero-content { position: absolute; z-index: 2; bottom: 15%; left: 4%; max-width: 45%; }
     
-    .cinematic-title { font-size: 45px; font-weight: 900; line-height: 1.1; margin-bottom: 15px; text-transform: uppercase; text-shadow: 2px 2px 4px rgba(0,0,0,0.6); }
+    .cinematic-title { font-size: 45px; font-weight: 900; line-height: 1.1; margin-bottom: 15px; color: #ffffff; text-transform: uppercase; text-shadow: 2px 2px 4px rgba(0,0,0,0.6); }
     .net-hero-meta { display: flex; align-items: center; gap: 10px; font-weight: bold; color: #a3a3a3; margin-bottom: 15px; font-size: 14px; }
     .net-match { color: #46d369; }
     .net-age { border: 1px solid #a3a3a3; padding: 0 4px; border-radius: 2px; }
@@ -619,5 +630,38 @@ const InlineStyles = () => (
     .gate-profile-card:hover .gate-add-box { background: white; color: black; border-color: white; }
     .gate-profile-name { font-size: 16px !important; color: #808080; font-weight: 500; transition: color 0.2s ease; }
     .gate-profile-card:hover .gate-profile-name { color: #ffffff !important; }
+
+    /* =========================================
+       📱 MOBILE RESPONSIVENESS FIXES 📱
+       ========================================= */
+    @media (max-width: 768px) {
+      .net-navbar { padding: 0 4%; }
+      /* Hide TV Shows, Movies text on mobile */
+      .net-nav-links li:not(:first-child) { display: none; }
+      .net-nav-links { gap: 10px; margin-left: 10px; }
+      .net-brand { font-size: 20px; }
+      .brand-img { height: 22px; }
+      
+      .net-search-box input { width: 80px; font-size: 12px; }
+      .kids-avatar-mini { display: none; }
+      
+      .net-hero-banner { height: 75vh; }
+      .net-hero-content { bottom: 10%; max-width: 90%; left: 5%; }
+      .cinematic-title { font-size: 32px; margin-bottom: 10px; }
+      .net-hero-meta { font-size: 12px; flex-wrap: wrap; }
+      .net-hero-desc { font-size: 14px; line-height: 1.4; margin-bottom: 15px; text-shadow: 1px 1px 3px rgba(0,0,0,0.9); }
+      .net-btn-play, .net-btn-info { font-size: 14px; padding: 6px 16px; }
+      
+      .netflix-row-title { font-size: 18px; margin-bottom: 5px; }
+      .netflix-card-container { min-width: 130px; width: 130px; height: 190px; } 
+      /* On mobile, usually portrait posters are better, but we are using backdrops, so keep ratio */
+      .netflix-card-container { height: 73px; } 
+      .net-movie-title-overlay { font-size: 10px; bottom: 2px; }
+      .netflix-card-container:hover { transform: scale(1.1) !important; z-index: 10 !important; }
+      
+      .gate-main-title { font-size: 24px; }
+      .gate-avatar-box { width: 90px !important; height: 90px !important; font-size: 40px; }
+      .gate-profiles-grid { gap: 20px !important; }
+    }
   `}</style>
 );
