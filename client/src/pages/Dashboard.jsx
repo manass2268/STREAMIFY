@@ -6,7 +6,7 @@ import { signOut, onAuthStateChanged } from 'firebase/auth';
 import { ref, set, onDisconnect } from 'firebase/database';
 import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 
-// 🔥 WATCH PARTY KO YAHAN IMPORT KIYA HAI 🔥
+// 🔥 WATCH PARTY IMPORT 🔥
 import WatchParty from './WatchParty';
 
 export default function Dashboard() {
@@ -41,7 +41,7 @@ export default function Dashboard() {
   // 🔥 TMDB CATEGORY STATES 🔥
   const [heroMovie, setHeroMovie] = useState(null);
   const [movieData, setMovieData] = useState({
-    trending: [], topRated: [], action: [], comedy: [], 
+    trending: [], comingSoon: [], topRated: [], action: [], comedy: [], 
     horror: [], romance: [], sciFi: [], thriller: [], 
     crime: [], mystery: [], kids: [], kidsRev: []
   });
@@ -55,6 +55,7 @@ export default function Dashboard() {
   // ==========================================
   const baseAdultRows = [
     { id: 'r1', title: 'Trending Now', dataKey: 'trending', isTop10: true },
+    { id: 'cs1', title: 'Coming Soon 🍿', dataKey: 'comingSoon', isTop10: false },
     { id: 'r2', title: 'Top Rated Masterpieces', dataKey: 'topRated', isTop10: false },
     { id: 'r3', title: 'Action & Adventure', dataKey: 'action', isTop10: false },
     { id: 'r4', title: 'Sci-Fi & Fantasy', dataKey: 'sciFi', isTop10: false },
@@ -94,13 +95,14 @@ export default function Dashboard() {
   }, [loadMoreRows]);
 
   // ==========================================
-  // 2. API FETCHING & SEARCH
+  // 2. API FETCHING & STRICT DATE FILTERING
   // ==========================================
   useEffect(() => {
     const fetchAllMovies = async () => {
       try {
         const endpoints = [
           { key: 'trending', url: `/trending/all/week?api_key=${API_KEY}&language=en-US` },
+          { key: 'comingSoon', url: `/movie/upcoming?api_key=${API_KEY}&language=en-US&page=1` },
           { key: 'topRated', url: `/movie/top_rated?api_key=${API_KEY}&language=en-US` },
           { key: 'action', url: `/discover/movie?api_key=${API_KEY}&with_genres=28` },
           { key: 'comedy', url: `/discover/movie?api_key=${API_KEY}&with_genres=35` },
@@ -116,9 +118,27 @@ export default function Dashboard() {
         const responses = await Promise.all(endpoints.map(ep => fetch(`https://api.themoviedb.org/3${ep.url}`)));
         const data = await Promise.all(responses.map(res => res.json()));
 
+        const today = new Date();
+
         let newObj = {};
         endpoints.forEach((ep, index) => {
-          newObj[ep.key] = data[index].results ? data[index].results.filter(m => m.backdrop_path) : [];
+          let results = data[index].results ? data[index].results.filter(m => m.backdrop_path) : [];
+          
+          if (ep.key === 'trending') {
+            results = results.filter(m => {
+              const rDate = m.release_date || m.first_air_date;
+              return rDate && new Date(rDate) <= today;
+            });
+          }
+
+          if (ep.key === 'comingSoon') {
+            results = results.filter(m => {
+              const rDate = m.release_date || m.first_air_date;
+              return rDate && new Date(rDate) > today;
+            });
+          }
+
+          newObj[ep.key] = results;
         });
         
         newObj.kidsRev = [...newObj.kids].reverse();
@@ -126,7 +146,6 @@ export default function Dashboard() {
         if (newObj.trending.length > 0) setHeroMovie(newObj.trending[Math.floor(Math.random() * newObj.trending.length)]);
       } catch (error) { 
         console.error("TMDB Fetch Error", error);
-        // Fallback agar mobile network slow ho
         setHeroMovie({ title: 'Streamify Originals', overview: 'Welcome to Streamify. Explore thousands of movies and TV shows below.', backdrop_path: null });
       }
     };
@@ -222,7 +241,6 @@ export default function Dashboard() {
 
   const handleProfileClick = (profile) => { setCurrentProfile(profile.name); setShowGate(false); };
 
-
   // ==========================================
   // 4. MINI COMPONENTS (NETFLIX CARDS)
   // ==========================================
@@ -257,32 +275,82 @@ export default function Dashboard() {
 
     const title = movie.title || movie.name || "Unknown";
     const isTV = movie.first_air_date ? true : false;
+    
+    const releaseDate = movie.release_date || movie.first_air_date;
+    const isUpcoming = releaseDate && new Date(releaseDate) > new Date();
+    const formattedDate = isUpcoming ? new Date(releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
+
     let originClass = "origin-center";
     if (index % 10 === 0) originClass = "origin-left"; 
     else if (index % 10 === 9) originClass = "origin-right";
 
     return (
-      <div className={`netflix-card-container ${originClass}`} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+      <div 
+        className={`netflix-card-container ${originClass}`} 
+        onMouseEnter={handleMouseEnter} 
+        onMouseLeave={handleMouseLeave}
+        onClick={() => {
+          // 🔥 CARD PE CLICK KARNE PE NETFLIX STYLE MODAL KHULEGA
+          navigate(`/watch/${movie.id}`);
+        }}
+      >
         <div className="card-image-wrapper">
           <img src={`${TMDB_IMAGE_BASE_URL}${imagePath}`} alt={title} className="netflix-card-img" loading="lazy" />
           {showTrailer && trailerKey && (
             <iframe src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=1&controls=0&showinfo=0&rel=0&loop=1&playlist=${trailerKey}`} title="trailer" allow="autoplay; encrypted-media" className="netflix-card-trailer" frameBorder="0" loading="lazy" />
           )}
-          {isTop10 && <div className="net-top10-badge">TOP<br/>10</div>}
-          <div className="recently-added-badge">Recently added</div>
+          {isTop10 && !isUpcoming && <div className="net-top10-badge">TOP<br/>10</div>}
+          {isUpcoming && <div className="net-top10-badge" style={{background: '#8b5cf6'}}>SOON</div>}
+          {!isUpcoming && <div className="recently-added-badge">Recently added</div>}
         </div>
         {!isHovered && <div className="net-movie-title-overlay">{title}</div>}
 
         <div className="netflix-card-details">
           <div className="ncd-buttons">
             <div className="ncd-actions-left">
-              <button className="ncd-btn play-btn-exact" onClick={() => showCustomToast(`Playing ${title}`, 'success')} title="Play"><svg viewBox="0 0 24 24" width="20" height="20" fill="black"><path d="M6 4l15 8-15 8z"></path></svg></button>
-              <button className="ncd-btn round-btn" onClick={() => showCustomToast(`Added to My List`, 'success')} title="Add"><svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6z"></path></svg></button>
-              <button className="ncd-btn round-btn" title="Like"><svg viewBox="0 0 24 24" width="14" height="14" fill="white"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"></path></svg></button>
+              {/* 🔥 PLAY BUTTON PE CLICK KARNE PE DIRECT MOVIE STREAM CHALEGI (?play=true) 🔥 */}
+              <button 
+                className="ncd-btn play-btn-exact" 
+                onClick={(e) => {
+                  e.stopPropagation(); // Card click event ko rokrega
+                  if (!isUpcoming) {
+                    navigate(`/watch/${movie.id}?play=true`);
+                  } else {
+                    showCustomToast("This movie is not released yet!", "error");
+                  }
+                }} 
+                title="Play Direct"
+              >
+                 <svg viewBox="0 0 24 24" width="20" height="20" fill="black"><path d="M6 4l15 8-15 8z"></path></svg>
+              </button>
+              
+              <button className="ncd-btn round-btn" onClick={(e) => { e.stopPropagation(); showCustomToast(isUpcoming ? `Remind Me Added` : `Added to My List`, 'success'); }} title={isUpcoming ? "Remind Me" : "Add"}>
+                 {isUpcoming ? <span style={{fontSize: '18px'}}>🔔</span> : <svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6z"></path></svg>}
+              </button>
+              <button className="ncd-btn round-btn" onClick={(e) => e.stopPropagation()} title="Like"><svg viewBox="0 0 24 24" width="14" height="14" fill="white"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"></path></svg></button>
             </div>
-            <button className="ncd-btn round-btn info-btn" title="More Info"><svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"></path></svg></button>
+            
+            {/* MORE INFO BUTTON MODAL KHULEGA */}
+            <button 
+              className="ncd-btn round-btn info-btn" 
+              title="More Info"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/watch/${movie.id}`);
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"></path></svg>
+            </button>
           </div>
-          <div className="ncd-meta"><span className="ncd-match">98% Match</span><span className="ncd-age-badge">A</span><span className="dot">•</span><span>{isTV ? '6 Episodes' : '2h 15m'}</span><span className="dot">•</span><span className="ncd-hd-badge">HD</span></div>
+          <div className="ncd-meta">
+            {isUpcoming ? (
+              <span className="ncd-match" style={{color: '#8b5cf6'}}>Coming {formattedDate}</span>
+            ) : (
+              <span className="ncd-match">98% Match</span>
+            )}
+            <span className="ncd-age-badge">U/A</span><span className="dot">•</span>
+            <span>{isTV ? '6 Episodes' : '2h 15m'}</span><span className="dot">•</span><span className="ncd-hd-badge">HD</span>
+          </div>
           <div className="ncd-genres">Gritty <span className="pipe">|</span> Action <span className="pipe">|</span> Thriller</div>
         </div>
       </div>
@@ -348,7 +416,6 @@ export default function Dashboard() {
                 </div>
               ))}
               
-              {/* Add Profile Box */}
               <div className="gate-profile-card" onClick={() => setShowAddProfileModal(true)}>
                 <div className="gate-avatar-box gate-add-box">+</div>
                 <span className="gate-profile-name">Add Profile</span>
@@ -397,7 +464,6 @@ export default function Dashboard() {
              <img src={logo} alt="Logo" className="brand-img" />
              <span className="brand-text-colored">stream<span className="text-cyan">ify</span></span>
           </div>
-          {/* Mobile me yeh links gayab ho jayenge automatically CSS se */}
           <ul className="net-nav-links">
             <li className={activeTab === 'home' ? 'active' : ''} onClick={() => {setActiveTab('home'); setSearchQuery('');}}>Home</li>
             <li onClick={() => showCustomToast('TV Shows coming soon')}>TV Shows</li>
@@ -446,8 +512,17 @@ export default function Dashboard() {
                     </div>
                     <p className="net-hero-desc">{heroMovie?.overview ? (heroMovie.overview.length > 180 ? heroMovie.overview.substring(0, 180) + "..." : heroMovie.overview) : "Fetching live data from TMDB..."}</p>
                     <div className="net-hero-buttons">
-                      <button className="net-btn-play"><span>▶</span> Play</button>
-                      <button className="net-btn-info"><span>ⓘ</span> More Info</button>
+                      {/* 🔥 HERO BANNER PLAY PE DIRECT MOVIE STREAM CHALEGI */}
+                      <button className="net-btn-play" onClick={() => {
+                        if (heroMovie?.id) navigate(`/watch/${heroMovie.id}?play=true`);
+                      }}>
+                        <span>▶</span> Play
+                      </button>
+                      <button className="net-btn-info" onClick={() => {
+                        if (heroMovie?.id) navigate(`/watch/${heroMovie.id}`);
+                      }}>
+                        <span>ⓘ</span> More Info
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -478,21 +553,12 @@ export default function Dashboard() {
 }
 
 // ==========================================
-// 6. STYLES COMPONENT (CSS MAGIC WITH MOBILE FIXES)
+// 6. STYLES COMPONENT
 // ==========================================
 const InlineStyles = () => (
   <style>{`
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    
-    html, body, #root { 
-      min-height: 100vh; 
-      overflow-y: auto !important; 
-      overflow-x: hidden; 
-      background-color: #141414; 
-      color: #fff; 
-      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; 
-    }
-    
+    html, body, #root { min-height: 100vh; overflow-y: auto !important; overflow-x: hidden; background-color: #141414; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     .dashboard-container { min-height: 100vh; width: 100%; display: flex; flex-direction: column; overflow-x: hidden; }
     .main-content { flex: 1; padding-bottom: 50px; overflow-y: visible; }
 
@@ -517,7 +583,7 @@ const InlineStyles = () => (
 
     .net-hero-banner { width: 100%; height: 85vh; position: relative; background-color: #141414; background-size: cover; background-position: center top; transition: background-image 0.5s ease-in-out;}
     .net-hero-vignette { position: absolute; inset: 0; background: linear-gradient(to right, rgba(20,20,20,0.9) 0%, rgba(20,20,20,0.2) 50%, transparent 100%), linear-gradient(to top, #141414 0%, transparent 25%); z-index: 1; }
-    .net-hero-content { position: absolute; z-index: 2; bottom: 15%; left: 4%; max-width: 45%; }
+    .net-hero-content { position: absolute; z-index: 2; bottom: 18%; left: 4%; max-width: 45%; }
     
     .cinematic-title { font-size: 45px; font-weight: 900; line-height: 1.1; margin-bottom: 15px; color: #ffffff; text-transform: uppercase; text-shadow: 2px 2px 4px rgba(0,0,0,0.6); }
     .net-hero-meta { display: flex; align-items: center; gap: 10px; font-weight: bold; color: #a3a3a3; margin-bottom: 15px; font-size: 14px; }
@@ -531,52 +597,152 @@ const InlineStyles = () => (
     .net-btn-info { background: rgba(109,109,110,0.7); color: #fff; border: none; padding: 8px 24px; border-radius: 4px; font-size: 18px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
     .net-btn-info:hover { background: rgba(109,109,110,0.4); }
 
-    .net-sliders-container { margin-top: -100px; position: relative; z-index: 10; padding-bottom: 50px; }
+    .net-sliders-container { margin-top: -30px; position: relative; z-index: 10; padding-bottom: 50px; }
     
-    .netflix-row-wrapper { margin-bottom: 2vw; position: relative; z-index: 1; transition: z-index 0.2s; }
-    .netflix-row-wrapper:hover { z-index: 50; } 
+    .netflix-row-wrapper { margin-bottom: 30px; position: relative; z-index: 1; transition: z-index 0.2s; }
+    .netflix-row-wrapper:hover { z-index: 999 !important; } 
 
-    .netflix-row-title { font-size: 1.4vw; font-weight: bold; margin-bottom: -15px; padding-left: 4%; color: #e5e5e5; position: relative; z-index: 2; text-shadow: 1px 1px 2px black;}
+    .netflix-row-title { 
+      font-size: 20px; 
+      font-weight: bold; 
+      margin-bottom: 12px; 
+      padding-left: 4%; 
+      color: #e5e5e5; 
+      position: relative; 
+      z-index: 2; 
+      text-shadow: 1px 1px 2px black;
+      text-align: left; 
+      display: block;
+      width: 100%;
+    }
     
     .netflix-row-container { position: relative; padding: 0 4%; }
     
-    .slider-arrow { position: absolute; top: 100px; bottom: 350px; width: 4%; background: rgba(0,0,0,0.5); border: none; color: white; font-size: 40px; cursor: pointer; z-index: 20; opacity: 0; transition: opacity 0.3s ease, background 0.3s ease; display: flex; align-items: center; justify-content: center; }
+    .slider-arrow { position: absolute; top: 0; bottom: 0; width: 4%; background: rgba(0,0,0,0.5); border: none; color: white; font-size: 40px; cursor: pointer; z-index: 20; opacity: 0; transition: opacity 0.3s ease, background 0.3s ease; display: flex; align-items: center; justify-content: center; }
     .slider-arrow:hover { background: rgba(0,0,0,0.8); font-size: 50px; }
     .left-arrow { left: 0; border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
     .right-arrow { right: 0; border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
     .netflix-row-wrapper:hover .slider-arrow { opacity: 1; }
 
+    /* 🔥 CLEAN ROW SCROLLING & OVERFLOW FIX 🔥 */
     .netflix-row { 
-      display: flex; gap: 8px; 
-      overflow-x: scroll; 
-      overflow-y: hidden;
-      padding-top: 100px; padding-bottom: 350px; 
-      margin-top: -100px; margin-bottom: -350px;
+      display: flex; 
+      gap: 12px; 
+      overflow-x: auto; 
+      overflow-y: visible; 
+      padding-top: 40px; 
+      padding-bottom: 160px; 
+      margin-top: -40px; 
+      margin-bottom: -160px; 
       scroll-behavior: smooth; 
-      will-change: transform;
+      will-change: transform; 
+      scrollbar-width: none;
     }
     .netflix-row::-webkit-scrollbar { display: none; }
 
-    .netflix-card-container { min-width: 260px; width: 260px; height: 146px; background-color: #141414; border-radius: 4px; position: relative; cursor: pointer; transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out; transition-delay: 0s; z-index: 1; will-change: transform;}
-    
+    /* 🔥 CARD CUT & HOVER FIX 🔥 */
+    .netflix-card-container { 
+      min-width: 250px; 
+      width: 250px; 
+      height: 140px; 
+      background-color: #141414; 
+      border-radius: 6px; 
+      position: relative; 
+      cursor: pointer; 
+      transition: transform 0.25s cubic-bezier(0.33, 1, 0.68, 1), box-shadow 0.25s ease; 
+      z-index: 1; 
+      will-change: transform;
+    }
     .origin-center { transform-origin: center center; }
     .origin-left { transform-origin: left center; }
     .origin-right { transform-origin: right center; }
 
-    .card-image-wrapper { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border-radius: 4px; overflow: hidden; background: #222;}
-    .netflix-card-img { width: 100%; height: 100%; object-fit: cover; z-index: 1;}
-    .netflix-card-trailer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none;}
+    .card-image-wrapper { 
+      width: 100%; 
+      height: 100%; 
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+      border-radius: 6px; 
+      overflow: hidden; 
+      background: #222;
+    }
+    .netflix-card-img { width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+    .netflix-card-trailer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none; }
     
-    .net-movie-title-overlay { position: absolute; bottom: 5px; left: 10px; right: 10px; font-weight: bold; font-size: 14px; text-shadow: 1px 1px 3px black; z-index: 5; text-align: center; opacity: 1; transition: 0.3s;}
+    .net-movie-title-overlay { position: absolute; bottom: 8px; left: 10px; right: 10px; font-weight: bold; font-size: 14px; text-shadow: 1px 1px 4px black; z-index: 5; text-align: center; opacity: 1; transition: 0.3s; }
     
-    .net-top10-badge { position: absolute; top: 0; left: 0; background: #e50914; color: white; padding: 4px 6px; font-size: 10px; font-weight: 900; line-height: 1.1; border-bottom-right-radius: 4px; border-top-left-radius: 4px; text-align: center; z-index: 15; box-shadow: 2px 2px 5px rgba(0,0,0,0.5); }
-    .recently-added-badge { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); background: #e50914; color: white; padding: 4px 10px; font-size: 11px; font-weight: bold; border-top-left-radius: 4px; border-top-right-radius: 4px; z-index: 10; opacity: 0; transition: opacity 0.3s; white-space: nowrap; box-shadow: 0 -2px 5px rgba(0,0,0,0.5); }
+    /* 🔥 TOP 10 BADGE CUT FIX 🔥 */
+    .net-top10-badge { 
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+      background: #e50914; 
+      color: white; 
+      padding: 4px 8px; 
+      font-size: 11px; 
+      font-weight: 900; 
+      line-height: 1.2; 
+      border-bottom-right-radius: 6px; 
+      border-top-left-radius: 6px; 
+      text-align: center; 
+      z-index: 15; 
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.5); 
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .recently-added-badge { 
+      position: absolute; 
+      bottom: 0; 
+      left: 50%; 
+      transform: translateX(-50%); 
+      background: #e50914; 
+      color: white; 
+      padding: 4px 10px; 
+      font-size: 11px; 
+      font-weight: bold; 
+      border-top-left-radius: 4px; 
+      border-top-right-radius: 4px; 
+      z-index: 10; 
+      opacity: 0; 
+      transition: opacity 0.3s; 
+      white-space: nowrap; 
+      box-shadow: 0 -2px 5px rgba(0,0,0,0.5); 
+    }
 
-    .netflix-card-details { position: absolute; top: 100%; left: 0; right: 0; background-color: #181818; padding: 15px; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; opacity: 0; visibility: hidden; transition: opacity 0.2s ease, visibility 0.2s ease; box-shadow: 0 15px 25px rgba(0,0,0,0.9); z-index: 100; border: 1px solid #333; border-top: none; display: flex; flex-direction: column; gap: 12px; }
+    .netflix-card-details { 
+      position: absolute; 
+      top: 100%; 
+      left: 0; 
+      right: 0; 
+      background-color: #181818; 
+      padding: 15px; 
+      border-bottom-left-radius: 6px; 
+      border-bottom-right-radius: 6px; 
+      opacity: 0; 
+      visibility: hidden; 
+      transition: opacity 0.2s ease, visibility 0.2s ease; 
+      box-shadow: 0 15px 30px rgba(0,0,0,0.95); 
+      z-index: 100; 
+      border: 1px solid #333; 
+      border-top: none; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 10px; 
+    }
     
-    .netflix-card-container:hover { transform: scale(1.45) !important; z-index: 1000 !important; box-shadow: 0 15px 40px rgba(0,0,0,1); border-bottom-left-radius: 0; border-bottom-right-radius: 0; transition-delay: 0s;}
+    /* 🔥 HOVER EFFECT EXPANSION 🔥 */
+    .netflix-card-container:hover { 
+      transform: scale(1.35) !important; 
+      z-index: 1000 !important; 
+      box-shadow: 0 15px 40px rgba(0,0,0,0.9); 
+      border-bottom-left-radius: 0; 
+      border-bottom-right-radius: 0; 
+    }
     .netflix-card-container:hover .card-image-wrapper { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-    .netflix-card-container:hover .netflix-card-details { opacity: 1; visibility: visible; transition-delay: 0s;}
+    .netflix-card-container:hover .netflix-card-details { opacity: 1; visibility: visible; }
     .netflix-card-container:hover .recently-added-badge { opacity: 1; }
     .netflix-card-container:hover .net-movie-title-overlay { opacity: 0; }
 
@@ -599,24 +765,22 @@ const InlineStyles = () => (
     .search-results-grid { display: flex; flex-wrap: wrap; gap: 20px; padding: 0 4%; justify-content: flex-start; overflow-y: visible; padding-top: 40px; margin-top: -40px;}
 
     /* Modal Styles */
-    .hs-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000; display: flex; justify-content: center; align-items: center; }
+    .hs-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000; display: flex; justify-content: center; align-items: center; padding: 15px;}
     .hs-modal-content { width: 100%; max-width: 450px; background: #141414; display: flex; flex-direction: column; padding: 25px; border-radius: 8px; border: 1px solid #333; }
     .hs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
     .hs-back-btn { background: transparent; border: none; color: white; font-size: 26px; cursor: pointer; }
     .hs-header h2 { font-size: 20px; color: white; }
-    .hs-avatar-container { display: flex; gap: 20px; justify-content: center; margin-bottom: 30px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
-    .hs-avatar-container::-webkit-scrollbar { display: none; }
-    .hs-avatar { min-width: 60px; height: 60px; border-radius: 50%; background: #222; display: flex; justify-content: center; align-items: center; font-size: 30px; cursor: pointer; opacity: 0.5; transition: 0.3s; }
+    .hs-avatar-container { display: flex; gap: 15px; justify-content: center; margin-bottom: 30px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
+    .hs-avatar { min-width: 50px; height: 50px; border-radius: 50%; background: #222; display: flex; justify-content: center; align-items: center; font-size: 24px; cursor: pointer; opacity: 0.5; transition: 0.3s; }
     .hs-avatar.selected { opacity: 1; border: 3px solid white; background: linear-gradient(135deg, #007bff, #e50914); transform: scale(1.1); box-shadow: 0 0 15px rgba(229,9,20,0.4); }
     .hs-input-group { position: relative; margin-bottom: 30px; }
     .hs-input-group input { width: 100%; background: transparent; border: 1.5px solid #444; border-radius: 4px; padding: 18px 15px; color: white; font-size: 16px; outline: none; }
-    .hs-input-group input:focus { border-color: white; }
     .hs-input-group label { position: absolute; top: -10px; left: 15px; background: #141414; padding: 0 5px; font-size: 13px; color: #888; }
-    .hs-fab { width: 100%; padding: 15px; border-radius: 4px; background: #e50914; border: none; color: white; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.3s; }
-    .hs-fab:hover { background: #f40612; }
+    .hs-fab { width: 100%; padding: 15px; border-radius: 4px; background: #e50914; border: none; color: white; font-size: 18px; font-weight: bold; cursor: pointer; }
 
     .animate-fade-in { animation: fadeIn 0.3s ease forwards; }
     @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
     .gate-container { width: 100vw; height: 100vh; background: #141414; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
     .gate-header { position: absolute; top: 30px; left: 4%; display: flex; align-items: center; gap: 10px; }
     .gate-logo { height: 36px; filter: drop-shadow(0 0 8px rgba(6,182,212,0.5)); }
@@ -627,41 +791,40 @@ const InlineStyles = () => (
     .gate-avatar-box { width: 130px !important; height: 130px !important; border-radius: 8px; background: linear-gradient(135deg, #a855f7, #06b6d4); display: flex; align-items: center; justify-content: center; font-size: 55px; border: 3px solid transparent; transition: all 0.2s ease; }
     .gate-profile-card:hover .gate-avatar-box { border-color: #ffffff !important; }
     .gate-add-box { background: transparent; border: 3px solid #808080; color: #808080; }
-    .gate-profile-card:hover .gate-add-box { background: white; color: black; border-color: white; }
-    .gate-profile-name { font-size: 16px !important; color: #808080; font-weight: 500; transition: color 0.2s ease; }
-    .gate-profile-card:hover .gate-profile-name { color: #ffffff !important; }
+    .gate-profile-name { font-size: 16px !important; color: #808080; font-weight: 500; }
 
     /* =========================================
        📱 MOBILE RESPONSIVENESS FIXES 📱
        ========================================= */
     @media (max-width: 768px) {
-      .net-navbar { padding: 0 4%; }
-      /* Hide TV Shows, Movies text on mobile */
+      .net-navbar { padding: 0 15px; }
       .net-nav-links li:not(:first-child) { display: none; }
       .net-nav-links { gap: 10px; margin-left: 10px; }
-      .net-brand { font-size: 20px; }
+      .brand-text-colored { font-size: 20px; }
       .brand-img { height: 22px; }
       
-      .net-search-box input { width: 80px; font-size: 12px; }
+      .net-search-box input { width: 90px; font-size: 13px; }
       .kids-avatar-mini { display: none; }
+      .net-main-avatar { width: 28px; height: 28px; }
       
-      .net-hero-banner { height: 75vh; }
-      .net-hero-content { bottom: 10%; max-width: 90%; left: 5%; }
-      .cinematic-title { font-size: 32px; margin-bottom: 10px; }
-      .net-hero-meta { font-size: 12px; flex-wrap: wrap; }
-      .net-hero-desc { font-size: 14px; line-height: 1.4; margin-bottom: 15px; text-shadow: 1px 1px 3px rgba(0,0,0,0.9); }
-      .net-btn-play, .net-btn-info { font-size: 14px; padding: 6px 16px; }
+      .net-hero-banner { height: 60vh; }
+      .net-hero-content { bottom: 5%; left: 15px; max-width: 90%; }
+      .cinematic-title { font-size: 28px; margin-bottom: 10px; }
+      .net-hero-desc { font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 15px; }
+      .net-btn-play, .net-btn-info { padding: 6px 14px; font-size: 14px; }
       
-      .netflix-row-title { font-size: 18px; margin-bottom: 5px; }
-      .netflix-card-container { min-width: 130px; width: 130px; height: 190px; } 
-      /* On mobile, usually portrait posters are better, but we are using backdrops, so keep ratio */
-      .netflix-card-container { height: 73px; } 
-      .net-movie-title-overlay { font-size: 10px; bottom: 2px; }
-      .netflix-card-container:hover { transform: scale(1.1) !important; z-index: 10 !important; }
+      .netflix-row-title { font-size: 16px; padding-left: 15px; margin-bottom: 5px; text-align: left; display: block; width: 100%; }
+      .netflix-row-container { padding: 0 15px; }
+      .slider-arrow { display: none; } 
+      
+      .netflix-card-container { min-width: 140px; width: 140px; height: 80px; }
+      .netflix-card-container:hover { transform: scale(1.05) !important; z-index: 10 !important; }
+      .netflix-card-details { display: none !important; }
+      .recently-added-badge { display: none !important; }
       
       .gate-main-title { font-size: 24px; }
-      .gate-avatar-box { width: 90px !important; height: 90px !important; font-size: 40px; }
-      .gate-profiles-grid { gap: 20px !important; }
+      .gate-avatar-box { width: 80px !important; height: 80px !important; font-size: 35px; }
+      .gate-profiles-grid { gap: 15px !important; }
     }
   `}</style>
 );

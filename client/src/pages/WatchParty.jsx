@@ -1,608 +1,830 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
+import logo from '../assets/logo1.png';
+import { auth, realtimeDb, db } from '../firebase';
+import { signOut, onAuthStateChanged } from 'firebase/auth';
+import { ref, set, onDisconnect } from 'firebase/database';
+import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 
-export default function WatchParty({ showCustomToast, TMDB_IMAGE_BASE_URL }) {
-  // 🔥 WATCH PARTY STATES 🔥
-  const [wpState, setWpState] = useState({
-    inRoom: false,
-    roomId: '',
-    isMuted: false, // Mic Mute
-    isCamOn: true,
-    isScreenSharing: false,
-    isRecording: false,
-    activeTab: 'chat',
-    chatInput: '',
-    messages: [
-      { id: 1, sender: 'System', time: '10:30 PM', text: 'Welcome to the Streamify Watch Party! 🍿', isMe: false, avatar: '🤖' }
-    ],
-    participants: [
-      { id: 1, name: 'You (Host)', avatar: '👦', isMicOn: true, isCamOn: true, isSpeaking: false }
-    ],
-    // 🔥 Video Player Interactive States 🔥
-    activeMovie: null,
-    isPlaying: true,
-    progress: 0,
-    showCC: false,
-    isVideoMuted: false,
-    isFullscreen: false
+// 🔥 WATCH PARTY IMPORT 🔥
+import WatchParty from './WatchParty';
+
+export default function Dashboard() {
+  const navigate = useNavigate();
+
+  // ==========================================
+  // 1. ALL STATES
+  // ==========================================
+  const [showGate, setShowGate] = useState(() => {
+    const saved = localStorage.getItem('showGate');
+    return saved !== null ? JSON.parse(saved) : true;
+  });
+  const [activeTab, setActiveTab] = useState(() => localStorage.getItem('activeTab') || 'home');
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isProfileLoading, setIsProfileLoading] = useState(true);
+  const [toast, setToast] = useState({ show: false, message: '', type: 'success' });
+  
+  const [userData, setUserData] = useState({ name: 'Loading...', email: '', role: 'standard_user', plan: 'free', photoURL: '', uid: '' });
+  const [profiles, setProfiles] = useState([]);
+  const [currentProfile, setCurrentProfile] = useState(() => localStorage.getItem('currentProfile') || null);
+  
+  // Modal States
+  const [showAddProfileModal, setShowAddProfileModal] = useState(false);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [newAvatar, setNewAvatar] = useState('😊');
+  const avatarOptions = ['👩', '👨‍🚀', '😊', '🐼', '🧛‍♂️'];
+  const [isUpdating, setIsUpdating] = useState(false);
+  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+
+  // 🔥 TMDB CATEGORY STATES 🔥
+  const [heroMovie, setHeroMovie] = useState(null);
+  const [movieData, setMovieData] = useState({
+    trending: [], comingSoon: [], topRated: [], action: [], comedy: [], 
+    horror: [], romance: [], sciFi: [], thriller: [], 
+    crime: [], mystery: [], kids: [], kidsRev: []
   });
 
-  const [showCreateMenu, setShowCreateMenu] = useState(false);
-  const [showLaterModal, setShowLaterModal] = useState(false);
-  const [showReadyPopup, setShowReadyPopup] = useState(false);
-  const [showBrowseModal, setShowBrowseModal] = useState(false);
-  const [generatedLink, setGeneratedLink] = useState('');
+  const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"; 
+  const API_KEY = "4e2f2d31c8fd1c86574cd70c54d9dbbd"; 
+  const currentProfObj = profiles.find(p => p.name === currentProfile);
 
-  const chatContainerRef = useRef(null);
-  const menuRef = useRef(null);
-  const playerRef = useRef(null); // Reference for Fullscreen API
-
-  // Mock Movies for the In-Room Browser
-  const mockMovies = [
-    { id: 101, title: 'Avengers: Endgame', backdrop_path: 'https://images.unsplash.com/photo-1605806616949-1e87b487cb2a?q=80&w=1000' },
-    { id: 102, title: 'Inception', backdrop_path: 'https://images.unsplash.com/photo-1440404653325-ab127d49abc1?q=80&w=1000' },
-    { id: 103, title: 'Interstellar', backdrop_path: 'https://images.unsplash.com/photo-1534447677768-be436bb09401?q=80&w=1000' },
-    { id: 104, title: 'The Dark Knight', backdrop_path: 'https://images.unsplash.com/photo-1509347528160-9a9e33742cdb?q=80&w=1000' }
+  // ==========================================
+  // 🔥 SMART VERTICAL INFINITE SCROLL ENGINE 🔥
+  // ==========================================
+  const baseAdultRows = [
+    { id: 'r1', title: 'Trending Now', dataKey: 'trending', isTop10: true },
+    { id: 'cs1', title: 'Coming Soon 🍿', dataKey: 'comingSoon', isTop10: false },
+    { id: 'r2', title: 'Top Rated Masterpieces', dataKey: 'topRated', isTop10: false },
+    { id: 'r3', title: 'Action & Adventure', dataKey: 'action', isTop10: false },
+    { id: 'r4', title: 'Sci-Fi & Fantasy', dataKey: 'sciFi', isTop10: false },
+    { id: 'r5', title: 'Laugh Out Loud', dataKey: 'comedy', isTop10: false },
+    { id: 'r6', title: 'Gritty & Ominous Thrillers', dataKey: 'thriller', isTop10: false },
+    { id: 'r7', title: 'Crime Detectives', dataKey: 'crime', isTop10: false },
+    { id: 'r8', title: 'Epic Romances', dataKey: 'romance', isTop10: false },
+    { id: 'r9', title: 'Chills & Horror', dataKey: 'horror', isTop10: false },
+    { id: 'r10', title: 'Mind-Bending Mysteries', dataKey: 'mystery', isTop10: false },
   ];
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (menuRef.current && !menuRef.current.contains(event.target)) setShowCreateMenu(false);
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [menuRef]);
+  const baseKidsRows = [
+    { id: 'k1', title: 'Animation & Fun', dataKey: 'kids', isTop10: true },
+    { id: 'k2', title: 'Learn & Play', dataKey: 'kidsRev', isTop10: false },
+    { id: 'k3', title: 'Family Movie Night', dataKey: 'kids', isTop10: false },
+  ];
 
-  // Simulate Video Progress Bar playing automatically
-  useEffect(() => {
-    let interval;
-    if (wpState.inRoom && wpState.activeMovie && wpState.isPlaying && !wpState.isScreenSharing) {
-      interval = setInterval(() => {
-        setWpState(prev => ({
-          ...prev, 
-          progress: prev.progress >= 100 ? 0 : prev.progress + 0.5 
-        }));
-      }, 1000);
-    }
-    return () => clearInterval(interval);
-  }, [wpState.inRoom, wpState.activeMovie, wpState.isPlaying, wpState.isScreenSharing]);
+  const [visibleRows, setVisibleRows] = useState([]);
+  const bottomBoundaryRef = useRef(null);
 
-  // Handle Fullscreen escape key
+  useEffect(() => { setVisibleRows(currentProfile === 'Kids' ? baseKidsRows : baseAdultRows); }, [currentProfile]);
+
+  const loadMoreRows = useCallback(() => {
+    setVisibleRows(prev => {
+      if (prev.length > 30) return prev; 
+      const base = currentProfile === 'Kids' ? baseKidsRows : baseAdultRows;
+      const appendedRows = base.map(row => ({ ...row, id: row.id + '_' + Date.now() + Math.random() }));
+      return [...prev, ...appendedRows];
+    });
+  }, [currentProfile]);
+
   useEffect(() => {
-    const handleFullscreenChange = () => {
-      setWpState(prev => ({ ...prev, isFullscreen: !!document.fullscreenElement }));
+    if (!bottomBoundaryRef.current) return;
+    const observer = new IntersectionObserver((entries) => { if (entries[0].isIntersecting) loadMoreRows(); }, { rootMargin: '800px', threshold: 0 });
+    observer.observe(bottomBoundaryRef.current);
+    return () => observer.disconnect();
+  }, [loadMoreRows]);
+
+  // ==========================================
+  // 2. API FETCHING & STRICT DATE FILTERING
+  // ==========================================
+  useEffect(() => {
+    const fetchAllMovies = async () => {
+      try {
+        const endpoints = [
+          { key: 'trending', url: `/trending/all/week?api_key=${API_KEY}&language=en-US` },
+          { key: 'comingSoon', url: `/movie/upcoming?api_key=${API_KEY}&language=en-US&page=1` },
+          { key: 'topRated', url: `/movie/top_rated?api_key=${API_KEY}&language=en-US` },
+          { key: 'action', url: `/discover/movie?api_key=${API_KEY}&with_genres=28` },
+          { key: 'comedy', url: `/discover/movie?api_key=${API_KEY}&with_genres=35` },
+          { key: 'horror', url: `/discover/movie?api_key=${API_KEY}&with_genres=27` },
+          { key: 'romance', url: `/discover/movie?api_key=${API_KEY}&with_genres=10749` },
+          { key: 'sciFi', url: `/discover/movie?api_key=${API_KEY}&with_genres=878` },
+          { key: 'thriller', url: `/discover/movie?api_key=${API_KEY}&with_genres=53` },
+          { key: 'crime', url: `/discover/movie?api_key=${API_KEY}&with_genres=80` },
+          { key: 'mystery', url: `/discover/movie?api_key=${API_KEY}&with_genres=9648` },
+          { key: 'kids', url: `/discover/movie?api_key=${API_KEY}&with_genres=16` }
+        ];
+
+        const responses = await Promise.all(endpoints.map(ep => fetch(`https://api.themoviedb.org/3${ep.url}`)));
+        const data = await Promise.all(responses.map(res => res.json()));
+
+        const today = new Date();
+
+        let newObj = {};
+        endpoints.forEach((ep, index) => {
+          let results = data[index].results ? data[index].results.filter(m => m.backdrop_path) : [];
+          
+          if (ep.key === 'trending') {
+            results = results.filter(m => {
+              const rDate = m.release_date || m.first_air_date;
+              return rDate && new Date(rDate) <= today;
+            });
+          }
+
+          if (ep.key === 'comingSoon') {
+            results = results.filter(m => {
+              const rDate = m.release_date || m.first_air_date;
+              return rDate && new Date(rDate) > today;
+            });
+          }
+
+          newObj[ep.key] = results;
+        });
+        
+        newObj.kidsRev = [...newObj.kids].reverse();
+        setMovieData(newObj);
+        if (newObj.trending.length > 0) setHeroMovie(newObj.trending[Math.floor(Math.random() * newObj.trending.length)]);
+      } catch (error) { 
+        console.error("TMDB Fetch Error", error);
+        setHeroMovie({ title: 'Streamify Originals', overview: 'Welcome to Streamify. Explore thousands of movies and TV shows below.', backdrop_path: null });
+      }
     };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    fetchAllMovies();
   }, []);
 
-  const generateRoomId = () => {
-    const chars = 'abcdefghijklmnopqrstuvwxyz';
-    const randomStr = (length) => Array.from({length}, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-    return `${randomStr(3)}-${randomStr(4)}-${randomStr(3)}`; 
-  };
+  useEffect(() => {
+    if (searchQuery.trim() === '') { setSearchResults([]); return; }
+    const fetchSearch = async () => {
+      try {
+        const res = await fetch(`https://api.themoviedb.org/3/search/multi?api_key=${API_KEY}&language=en-US&query=${searchQuery}&page=1`);
+        const data = await res.json();
+        setSearchResults(data.results ? data.results.filter(m => m.backdrop_path || m.poster_path) : []);
+      } catch (error) { console.error("Search failed"); }
+    };
+    const timeoutId = setTimeout(fetchSearch, 500);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
 
-  const getFullLink = (id) => `streamify.com/wp/${id}`;
+  useEffect(() => {
+    const handleScroll = () => setIsScrolled(window.scrollY > 10);
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
-  const handleCreateForLater = () => {
-    const newId = generateRoomId();
-    setGeneratedLink(getFullLink(newId));
-    setShowCreateMenu(false);
-    setShowLaterModal(true);
-    setWpState(prev => ({...prev, roomId: newId})); 
-  };
+  useEffect(() => {
+    localStorage.setItem('showGate', JSON.stringify(showGate));
+    localStorage.setItem('activeTab', activeTab);
+    if (currentProfile) localStorage.setItem('currentProfile', currentProfile);
+  }, [showGate, activeTab, currentProfile]);
 
-  const handleStartInstant = () => {
-    const newId = generateRoomId();
-    setWpState(prev => ({...prev, inRoom: true, roomId: newId, activeMovie: null, progress: 0}));
-    setGeneratedLink(getFullLink(newId));
-    setShowCreateMenu(false);
-    setShowReadyPopup(true);
-    showCustomToast(`Instant Watch Party Created!`, "success");
-  };
+  useEffect(() => {
+    let unsubscribeFirestore = null;
+    let userStatusRef = null;
 
-  const handleJoinRoom = (e) => {
-    e.preventDefault();
-    if (!wpState.roomId.trim()) return;
-    setWpState(prev => ({...prev, inRoom: true, activeMovie: null, progress: 0}));
-    setShowReadyPopup(false); 
-    showCustomToast(`Joined Watch Party: ${wpState.roomId}`, "success");
-  };
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        userStatusRef = ref(realtimeDb, '/online_users/' + currentUser.uid);
+        set(userStatusRef, { name: currentUser.displayName || 'User', online: true, timestamp: Date.now() });
+        onDisconnect(userStatusRef).remove();
 
-  const handleLeaveRoom = () => {
-    if (document.fullscreenElement) document.exitFullscreen();
-    setWpState(prev => ({...prev, inRoom: false, roomId: '', activeMovie: null})); 
-    setShowReadyPopup(false);
-    showCustomToast("Left Watch Party", "success");
-  };
-
-  const copyLinkToClipboard = (linkText) => {
-    navigator.clipboard.writeText(linkText);
-    showCustomToast("Watch Party link copied", "success");
-  };
-
-  const toggleWpControl = (key) => {
-    if (key === 'isScreenSharing') {
-      showCustomToast(wpState.isScreenSharing ? "Screen sharing stopped" : "You are now sharing your screen", "success");
-    }
-    if (key === 'showCC') {
-      showCustomToast(wpState.showCC ? "Captions turned off" : "Captions turned on", "success");
-    }
-    setWpState(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  // 🔥 FULLSCREEN FUNCTION 🔥
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      if (playerRef.current) {
-        playerRef.current.requestFullscreen().catch(err => {
-          showCustomToast("Error attempting to enable fullscreen", "error");
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        unsubscribeFirestore = onSnapshot(userDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setUserData({ uid: currentUser.uid, name: data.name || currentUser.displayName || 'User', email: data.email || currentUser.email || '' });
+            if (data.profiles && data.profiles.length > 0) setProfiles(data.profiles);
+            else {
+              const defaultProfile = [{ id: 1, name: currentUser.displayName || 'Main', type: 'adult', avatar: '👑', pin: null }];
+              setDoc(userDocRef, { profiles: defaultProfile }, { merge: true }); setProfiles(defaultProfile);
+            }
+          } else {
+             const defaultProfile = [{ id: 1, name: currentUser.displayName || 'Main', type: 'adult', avatar: '👑', pin: null }];
+             setDoc(userDocRef, { name: currentUser.displayName || 'User', email: currentUser.email || '', profiles: defaultProfile }, { merge: true });
+             setProfiles(defaultProfile);
+          }
+          setIsProfileLoading(false);
         });
+      } else { setIsProfileLoading(false); navigate('/login'); }
+    });
+    return () => { unsubscribeAuth(); if (unsubscribeFirestore) unsubscribeFirestore(); if (userStatusRef) set(userStatusRef, null); };
+  }, [navigate]);
+
+  const showCustomToast = (message, type = 'success') => { setToast({ show: true, message, type }); setTimeout(() => setToast(prev => ({ ...prev, show: false })), 3500); };
+  
+  const handleAction = async (actionType, e = null) => { 
+    if (e) e.preventDefault(); 
+    const currentUser = auth.currentUser;
+    
+    if (actionType === 'logout') { 
+      localStorage.clear(); 
+      if (currentUser) await set(ref(realtimeDb, '/online_users/' + currentUser.uid), null);
+      await signOut(auth); 
+      navigate('/login'); 
+    } 
+    else if (actionType === 'addProfile') {
+      if (!newProfileName.trim()) return showCustomToast("Please enter a Profile Name!", "error");
+      setIsUpdating(true);
+      try {
+        const newObj = { id: Date.now(), name: newProfileName.trim(), type: 'adult', avatar: newAvatar, pin: null };
+        const updatedProfilesList = [...profiles, newObj];
+        setProfiles(updatedProfilesList); 
+        setNewProfileName(''); setNewAvatar('😊'); setShowAddProfileModal(false); 
+        await updateDoc(doc(db, 'users', currentUser.uid), { profiles: updatedProfilesList });
+        showCustomToast(`Created Profile: ${newObj.name}! ✨`, "success");
+      } catch (error) {
+        showCustomToast("Failed to add profile", "error");
+      } finally {
+        setIsUpdating(false);
       }
-    } else {
-      document.exitFullscreen();
     }
   };
-  
-  const handleSendMessage = (e) => {
-    e.preventDefault();
-    if (!wpState.chatInput.trim()) return;
-    setWpState(prev => ({
-      ...prev,
-      messages: [...prev.messages, { id: Date.now(), sender: 'You', time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}), text: prev.chatInput, isMe: true, avatar: '👦' }],
-      chatInput: ''
-    }));
-    setTimeout(() => { if(chatContainerRef.current) chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight; }, 100);
-  };
 
-  const handleSelectMovie = (movie) => {
-    setWpState(prev => ({ ...prev, activeMovie: movie, isPlaying: true, progress: 0 }));
-    setShowBrowseModal(false);
-    showCustomToast(`${movie.title} is now playing for everyone!`, "success");
-  };
+  const handleProfileClick = (profile) => { setCurrentProfile(profile.name); setShowGate(false); };
 
-  const currentDateTime = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  // ==========================================
+  // 4. MINI COMPONENTS (NETFLIX CARDS)
+  // ==========================================
 
-  const movieBg = wpState.activeMovie?.backdrop_path ? TMDB_IMAGE_BASE_URL + wpState.activeMovie.backdrop_path : '';
-  const movieTitle = wpState.activeMovie ? (wpState.activeMovie.title || wpState.activeMovie.name) : 'Waiting for host to select a movie...';
+  const NetflixCard = React.memo(({ movie, index, isTop10 }) => {
+    const [isHovered, setIsHovered] = useState(false);
+    const [showTrailer, setShowTrailer] = useState(false);
+    const [trailerKey, setTrailerKey] = useState(null);
+    const hoverTimeoutRef = useRef(null);
 
-  return (
-    <div className={wpState.inRoom ? "wp-room-fullscreen" : "wp-landing-wrapper"}>
-      
-      {!wpState.inRoom ? (
-        // ==========================================
-        // LANDING PAGE
-        // ==========================================
-        <div className="wp-landing-container animate-fade-in">
-          <div className="wp-glass-box">
-            <div className="wp-split-layout">
-              <div className="wp-left-panel">
-                <div className="wp-panel-icon">🗓️</div>
-                <h2 className="wp-panel-title">Start a Watch Party</h2>
-                
-                <div className="wp-dropdown-wrapper" ref={menuRef}>
-                  <button className="wp-btn-purple" onClick={() => setShowCreateMenu(!showCreateMenu)}>
-                    Party Options <span className="wp-dropdown-arrow">{showCreateMenu ? '▲' : '▼'}</span>
-                  </button>
-                  
-                  {showCreateMenu && (
-                    <div className="wp-dropdown-menu animate-scale-up">
-                      <div className="wp-dropdown-item" onClick={handleCreateForLater}><span className="wp-dd-icon">🔗</span> Generate link for later</div>
-                      <div className="wp-dropdown-item" onClick={handleStartInstant}><span className="wp-dd-icon">＋</span> Start an instant party</div>
-                      <div className="wp-dropdown-item" onClick={() => showCustomToast("Calendar syncing coming soon!", "success")}><span className="wp-dd-icon">📅</span> Schedule in Streamify Calendar</div>
-                    </div>
-                  )}
-                </div>
-                <p className="wp-panel-desc">Create secure, feature-rich watch parties with advanced movie sync and video chat collaboration.</p>
-              </div>
+    const handleMouseEnter = () => {
+      setIsHovered(true); 
+      hoverTimeoutRef.current = setTimeout(async () => {
+        if (!trailerKey) {
+          try {
+            const type = movie.media_type || (movie.first_air_date ? 'tv' : 'movie');
+            const res = await fetch(`https://api.themoviedb.org/3/${type}/${movie.id}/videos?api_key=${API_KEY}`);
+            const data = await res.json();
+            if (data.results && data.results.length > 0) {
+              const trailer = data.results.find(vid => vid.site === "YouTube" && vid.type === "Trailer") || data.results.find(vid => vid.site === "YouTube");
+              if (trailer) { setTrailerKey(trailer.key); setShowTrailer(true); }
+            }
+          } catch (e) {}
+        } else { setShowTrailer(true); }
+      }, 1500); 
+    };
 
-              <div className="wp-vertical-divider"></div>
+    const handleMouseLeave = () => { setIsHovered(false); setShowTrailer(false); clearTimeout(hoverTimeoutRef.current); };
 
-              <div className="wp-right-panel">
-                <div className="wp-panel-icon">🔗</div>
-                <h2 className="wp-panel-title">Join an Existing Party</h2>
-                <form onSubmit={handleJoinRoom} className="wp-join-form">
-                  <input type="text" placeholder="streamify.com/wp/abcdefghi" value={wpState.roomId} onChange={(e) => setWpState({...wpState, roomId: e.target.value})} className="wp-input-dark" />
-                  <button type="submit" className={`wp-btn-join ${wpState.roomId.trim() ? 'active' : ''}`} disabled={!wpState.roomId.trim()}>Join</button>
-                </form>
-                <p className="wp-panel-desc-small">Enter a valid Streamify Watch Party code or link to sync up with your friends.</p>
-              </div>
-            </div>
-            <div className="wp-box-footer">{currentDateTime}</div>
-          </div>
-          <div className="wp-landing-footer">Integrated Streamify Sync • streamify.com • Learn more about Watch Party features</div>
+    const imagePath = movie.backdrop_path || movie.poster_path;
+    if (!imagePath) return null;
 
-          {/* LATER MODAL */}
-          {showLaterModal && (
-            <div className="wp-modal-overlay" onClick={() => setShowLaterModal(false)}>
-              <div className="wp-later-modal animate-scale-up" onClick={e => e.stopPropagation()}>
-                <div className="wp-lm-header"><h3>Here's your Watch Party link</h3><button className="wp-close-btn" onClick={() => setShowLaterModal(false)}>✕</button></div>
-                <p className="wp-lm-text">Copy this link and send it to your friends. Be sure to save it so you can use it when it's movie time.</p>
-                <div className="wp-lm-link-box"><span className="wp-lm-link-text">{generatedLink}</span><button className="wp-lm-copy-btn" onClick={() => copyLinkToClipboard(generatedLink)}>📋</button></div>
-              </div>
-            </div>
+    const title = movie.title || movie.name || "Unknown";
+    const isTV = movie.first_air_date ? true : false;
+    
+    const releaseDate = movie.release_date || movie.first_air_date;
+    const isUpcoming = releaseDate && new Date(releaseDate) > new Date();
+    const formattedDate = isUpcoming ? new Date(releaseDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : null;
+
+    let originClass = "origin-center";
+    if (index % 10 === 0) originClass = "origin-left"; 
+    else if (index % 10 === 9) originClass = "origin-right";
+
+    return (
+      <div 
+        className={`netflix-card-container ${originClass}`} 
+        onMouseEnter={handleMouseEnter} 
+        onMouseLeave={handleMouseLeave}
+        onClick={() => {
+          // 🔥 CARD KE IMAGE CLICK PE NETFLIX STYLE MODAL KHULEGA
+          navigate(`/watch/${movie.id}`);
+        }}
+      >
+        <div className="card-image-wrapper">
+          <img src={`${TMDB_IMAGE_BASE_URL}${imagePath}`} alt={title} className="netflix-card-img" loading="lazy" />
+          {showTrailer && trailerKey && (
+            <iframe src={`https://www.youtube.com/embed/${trailerKey}?autoplay=1&mute=1&controls=0&showinfo=0&rel=0&loop=1&playlist=${trailerKey}`} title="trailer" allow="autoplay; encrypted-media" className="netflix-card-trailer" frameBorder="0" loading="lazy" />
           )}
+          {isTop10 && !isUpcoming && <div className="net-top10-badge">TOP<br/>10</div>}
+          {isUpcoming && <div className="net-top10-badge" style={{background: '#8b5cf6'}}>SOON</div>}
+          {!isUpcoming && <div className="recently-added-badge">Recently added</div>}
         </div>
-      ) : (
-        // ==========================================
-        // ACTIVE ROOM SCREEN 
-        // ==========================================
-        <div className="wp-active-layout animate-fade-in">
-          
-          <main className="wp-main-content">
+        {!isHovered && <div className="net-movie-title-overlay">{title}</div>}
+
+        <div className="netflix-card-details">
+          <div className="ncd-buttons">
+            <div className="ncd-actions-left">
+              {/* 🔥 PLAY BUTTON PE CLICK KARNE PE DIRECT MOVIE STREAM CHALEGI (?play=true) 🔥 */}
+              <button 
+                className="ncd-btn play-btn-exact" 
+                onClick={(e) => {
+                  e.stopPropagation(); // Card Click ko block karega
+                  if (!isUpcoming) {
+                    navigate(`/watch/${movie.id}?play=true`);
+                  } else {
+                    showCustomToast("This movie is not released yet!", "error");
+                  }
+                }} 
+                title="Play Direct"
+              >
+                 <svg viewBox="0 0 24 24" width="20" height="20" fill="black"><path d="M6 4l15 8-15 8z"></path></svg>
+              </button>
+              
+              <button className="ncd-btn round-btn" onClick={(e) => { e.stopPropagation(); showCustomToast(isUpcoming ? `Remind Me Added` : `Added to My List`, 'success'); }} title={isUpcoming ? "Remind Me" : "Add"}>
+                 {isUpcoming ? <span style={{fontSize: '18px'}}>🔔</span> : <svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6z"></path></svg>}
+              </button>
+              <button className="ncd-btn round-btn" onClick={(e) => e.stopPropagation()} title="Like"><svg viewBox="0 0 24 24" width="14" height="14" fill="white"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"></path></svg></button>
+            </div>
             
-            {/* LEFT: VIDEO PLAYER AREA */}
-            <div className="wp-video-col" ref={playerRef}>
-              <div className="wp-player-container" style={wpState.activeMovie && !wpState.isScreenSharing ? {backgroundImage: `url(${movieBg})`} : {background: '#111'}}>
-                
-                {/* 1. SCREEN SHARE OVERLAY */}
-                {wpState.isScreenSharing && (
-                  <div className="wp-screen-share-overlay animate-fade-in">
-                     <div className="wp-ss-icon">🖥️</div>
-                     <h2>You are presenting to everyone</h2>
-                     <button className="wp-stop-ss-btn" onClick={() => toggleWpControl('isScreenSharing')}>Stop Sharing</button>
-                  </div>
-                )}
+            {/* MORE INFO BUTTON MODAL KHULEGA */}
+            <button 
+              className="ncd-btn round-btn info-btn" 
+              title="More Info"
+              onClick={(e) => {
+                e.stopPropagation();
+                navigate(`/watch/${movie.id}`);
+              }}
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"></path></svg>
+            </button>
+          </div>
+          <div className="ncd-meta">
+            {isUpcoming ? (
+              <span className="ncd-match" style={{color: '#8b5cf6'}}>Coming {formattedDate}</span>
+            ) : (
+              <span className="ncd-match">98% Match</span>
+            )}
+            <span className="ncd-age-badge">U/A</span><span className="dot">•</span>
+            <span>{isTV ? '6 Episodes' : '2h 15m'}</span><span className="dot">•</span><span className="ncd-hd-badge">HD</span>
+          </div>
+          <div className="ncd-genres">Gritty <span className="pipe">|</span> Action <span className="pipe">|</span> Thriller</div>
+        </div>
+      </div>
+    );
+  });
 
-                {/* 2. BLANK SCREEN OVERLAY (Waiting for movie) */}
-                {!wpState.activeMovie && !wpState.isScreenSharing && (
-                   <div className="wp-blank-screen animate-fade-in">
-                      <div className="wp-blank-icon">🍿</div>
-                      <h2>Waiting for host to select a movie</h2>
-                      <p>Invite your friends using the code below, then browse library to start watching.</p>
-                      <button className="wp-browse-btn" onClick={() => setShowBrowseModal(true)}>Browse Movies</button>
-                   </div>
-                )}
+  const NetflixRow = React.memo(({ title, movies, isTop10Row }) => {
+    const rowRef = useRef(null);
+    const [showLeftArrow, setShowLeftArrow] = useState(false);
+    const [loopedMovies, setLoopedMovies] = useState([]);
 
-                {/* 3. CLOSED CAPTIONS MOCK (If active) */}
-                {wpState.activeMovie && wpState.showCC && !wpState.isScreenSharing && (
-                  <div className="wp-cc-text animate-slide-up">
-                    [Epic cinematic music playing in the background]
-                  </div>
-                )}
+    useEffect(() => { if (movies && movies.length > 0) setLoopedMovies([...movies, ...movies]); }, [movies]);
 
-                {/* 4. ACTUAL MOVIE CONTROLS */}
-                {wpState.activeMovie && !wpState.isScreenSharing && (
-                  <div className="wp-player-controls">
-                    <div className="wp-player-title">{wpState.activeMovie.title}</div>
-                    <div className="wp-progress-bar">
-                      <div className="wp-progress-fill" style={{width: `${wpState.progress}%`}}></div>
-                      <div className="wp-progress-thumb" style={{left: `${wpState.progress}%`}}></div>
-                    </div>
-                    <div className="wp-controls-row">
-                      <div className="wp-cr-left">
-                        {/* Play/Pause Button */}
-                        <button className="wp-icon-btn" onClick={() => toggleWpControl('isPlaying')} title={wpState.isPlaying ? "Pause" : "Play"}>
-                          {wpState.isPlaying ? '⏸' : '▶'}
-                        </button>
-                        {/* Video Mute/Unmute */}
-                        <button className="wp-icon-btn" onClick={() => toggleWpControl('isVideoMuted')} title={wpState.isVideoMuted ? "Unmute Video" : "Mute Video"}>
-                          {wpState.isVideoMuted ? '🔇' : '🔊'}
-                        </button>
-                        <span className="wp-time-text">01:24:35 / 03:01:12</span>
-                      </div>
-                      <div className="wp-cr-right">
-                        {/* CC Toggle */}
-                        <button className={`wp-icon-btn ${wpState.showCC ? 'active-text' : ''}`} onClick={() => toggleWpControl('showCC')} title="Toggle Subtitles">CC</button>
-                        {/* Settings */}
-                        <button className="wp-icon-btn" onClick={() => showCustomToast("Video Quality Settings opened", "success")} title="Settings">⚙️</button>
-                        {/* Fullscreen Toggle */}
-                        <button className="wp-icon-btn" onClick={toggleFullscreen} title={wpState.isFullscreen ? "Exit Fullscreen" : "Fullscreen"}>
-                          {wpState.isFullscreen ? '🗗' : '⛶'}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* 5. "YOUR PARTY'S READY" POPUP */}
-                {showReadyPopup && !wpState.isFullscreen && (
-                  <div className="wp-ready-popup animate-slide-up">
-                    <div className="wp-rp-header">
-                      <h3>Your Watch Party is ready</h3>
-                      <button className="wp-close-btn-dark" onClick={() => setShowReadyPopup(false)}>✕</button>
-                    </div>
-                    <button className="wp-rp-add-btn" onClick={() => copyLinkToClipboard(generatedLink)}>
-                      <span className="wp-rp-add-icon">📋</span> Copy Link
-                    </button>
-                    <p className="wp-rp-subtitle">Share this Watch Party link with others you want in the room before starting the movie.</p>
-                    <div className="wp-rp-link-box">
-                      <span className="wp-rp-link-text">{generatedLink}</span>
-                    </div>
-                    <div className="wp-rp-footer">
-                      <span className="wp-rp-shield">🛡️</span> Only people with the link can join your synced session.
-                    </div>
-                  </div>
-                )}
+    const scroll = (direction) => {
+      if (rowRef.current) {
+        const { scrollLeft, clientWidth, scrollWidth } = rowRef.current;
+        const scrollAmount = clientWidth * 0.8; 
+        if (direction === 'right') {
+          if (scrollLeft + clientWidth >= scrollWidth - (clientWidth * 1.5)) setLoopedMovies(prev => prev.length < 60 ? [...prev, ...movies] : prev);
+          rowRef.current.scrollTo({ left: scrollLeft + scrollAmount, behavior: 'smooth' });
+          setShowLeftArrow(true);
+        } else {
+          if (scrollLeft <= 0) rowRef.current.scrollTo({ left: scrollWidth / 2, behavior: 'smooth' }); 
+          else rowRef.current.scrollTo({ left: scrollLeft - scrollAmount, behavior: 'smooth' });
+          if (scrollLeft - scrollAmount <= 0) setShowLeftArrow(false);
+        }
+      }
+    };
+    if (!movies || movies.length === 0) return null;
+
+    return (
+      <div className="netflix-row-wrapper">
+        <h3 className="netflix-row-title">{title}</h3>
+        <div className="netflix-row-container">
+          {showLeftArrow && <button className="slider-arrow left-arrow" onClick={() => scroll('left')}>&#10094;</button>}
+          <div className="netflix-row" ref={rowRef}>
+            {loopedMovies.map((movie, index) => <NetflixCard key={`${title}-${movie.id}-${index}`} movie={movie} index={index} isTop10={isTop10Row && (index % movies.length) < 5} />)}
+          </div>
+          <button className="slider-arrow right-arrow" onClick={() => scroll('right')}>&#10095;</button>
+        </div>
+      </div>
+    );
+  });
+
+  // ==========================================
+  // 5. MAIN RENDER (UI)
+  // ==========================================
+
+  if (showGate) {
+    return (
+      <div className="gate-container">
+        <div className="gate-header"><img src={logo} alt="Logo" className="gate-logo" /><span className="brand-text-colored">stream<span className="text-cyan">ify</span></span></div>
+        {isProfileLoading ? (
+          <div className="animate-pulse-glow" style={{ fontSize: '20px', color: '#808080', marginTop: '30vh' }}>Loading your cinematic profiles... 🍿</div>
+        ) : (
+          <div className="profiles-screen animate-fade-in">
+            <h1 className="gate-main-title">Who's watching?</h1>
+            <div className="gate-profiles-grid">
+              {profiles.map(p => (
+                <div key={p.id} className="gate-profile-card" onClick={() => handleProfileClick(p)}>
+                  <div className="gate-avatar-box" style={p.avatar === '😊' ? {background: 'linear-gradient(135deg, #007bff, #a855f7)'} : {}}>{p.avatar}</div>
+                  <span className="gate-profile-name">{p.name}</span>
+                </div>
+              ))}
+              
+              <div className="gate-profile-card" onClick={() => setShowAddProfileModal(true)}>
+                <div className="gate-avatar-box gate-add-box">+</div>
+                <span className="gate-profile-name">Add Profile</span>
               </div>
             </div>
+          </div>
+        )}
 
-            {/* RIGHT SIDE: CHAT/PARTICIPANTS SIDEBAR */}
-            {/* Hide sidebar if fullscreen */}
-            {!wpState.isFullscreen && (
-              <div className="wp-sidebar-col">
-                <div className="wp-tabs">
-                  <button className={`wp-tab ${wpState.activeTab === 'chat' ? 'active' : ''}`} onClick={() => setWpState({...wpState, activeTab: 'chat'})}>Chat</button>
-                  <button className={`wp-tab ${wpState.activeTab === 'participants' ? 'active' : ''}`} onClick={() => setWpState({...wpState, activeTab: 'participants'})}>Participants ({wpState.participants.length})</button>
-                </div>
-
-                {wpState.activeTab === 'chat' ? (
-                  <>
-                    <div className="wp-chat-container" ref={chatContainerRef}>
-                      {wpState.messages.map(msg => (
-                        <div key={msg.id} className={`wp-msg-wrapper ${msg.isMe ? 'msg-mine' : 'msg-other'}`}>
-                          <div className="wp-msg-content">
-                            <div className="wp-msg-header">
-                              <span className="wp-msg-name">{msg.sender}</span> 
-                              <span className="wp-msg-time">{msg.time}</span>
-                            </div>
-                            <div className="wp-msg-bubble">{msg.text}</div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <form className="wp-chat-input-box" onSubmit={handleSendMessage}>
-                      <input type="text" placeholder="Send a message to everyone" value={wpState.chatInput} onChange={(e)=>setWpState({...wpState, chatInput: e.target.value})} />
-                      <button type="submit" className="wp-send-btn">➤</button>
-                    </form>
-                  </>
-                ) : (
-                  <div className="wp-participants-container">
-                    {wpState.participants.map(p => (
-                      <div key={p.id} className="wp-participant-item">
-                         <div className="wp-p-avatar">{p.avatar}</div>
-                         <div className="wp-p-name">{p.name}</div>
-                         <div className="wp-p-status">{p.isMicOn ? '🎙️' : '🔇'} {p.isCamOn ? '📷' : '🚫'}</div>
-                      </div>
-                    ))}
-                    {!wpState.activeMovie && (
-                       <button className="wp-start-party-btn" onClick={() => setShowBrowseModal(true)}>+ Select Movie</button>
-                    )}
-                  </div>
-                )}
+        {/* Create Profile Modal */}
+        {showAddProfileModal && (
+          <div className="hs-modal-overlay animate-fade-in">
+            <div className="hs-modal-content">
+              <div className="hs-header">
+                <button type="button" className="hs-back-btn" onClick={() => setShowAddProfileModal(false)}>←</button>
+                <h2>Create Profile</h2>
+                <div style={{ width: '24px' }}></div>
               </div>
-            )}
-          </main>
-
-          {/* BOTTOM CONTROL BAR */}
-          {/* Hide bottom bar if fullscreen */}
-          {!wpState.isFullscreen && (
-            <footer className="wp-bottom-bar">
-              <div className="wp-bb-left">
-                 <div className="wp-bb-time-room">
-                   <span className="wp-current-time">{new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
-                   <span className="wp-divider-pipe">|</span>
-                   <span className="wp-room-code">{wpState.roomId}</span>
-                 </div>
-              </div>
-
-              <div className="wp-bb-center">
-                <button className={`wp-bb-main-icon ${wpState.isMuted ? 'muted' : ''}`} onClick={() => toggleWpControl('isMuted')} title="Turn on/off microphone">
-                  {wpState.isMuted ? '🔇' : '🎙️'}
-                </button>
-                <button className={`wp-bb-main-icon ${!wpState.isCamOn ? 'muted' : ''}`} onClick={() => toggleWpControl('isCamOn')} title="Turn on/off camera">
-                  {wpState.isCamOn ? '📷' : '🚫'}
-                </button>
-                <button className={`wp-bb-main-icon ${wpState.showCC ? 'active-border' : ''}`} onClick={() => toggleWpControl('showCC')} title="Turn on captions">CC</button>
-                <button className={`wp-bb-main-icon ${wpState.isScreenSharing ? 'active-border' : ''}`} onClick={() => toggleWpControl('isScreenSharing')} title="Share screen">🖥️</button>
-                <button className={`wp-bb-main-icon ${wpState.isRecording ? 'recording-active' : ''}`} onClick={() => toggleWpControl('isRecording')} title="Record Session">⏺️</button>
-                <button className="wp-bb-leave-btn" onClick={handleLeaveRoom} title="Leave party">📞</button>
-              </div>
-
-              <div className="wp-bb-right">
-                <button className="wp-icon-btn" title="Party details" onClick={() => setShowReadyPopup(!showReadyPopup)}>ℹ️</button>
-                <button className={`wp-icon-btn ${wpState.activeTab === 'participants' ? 'active-text' : ''}`} onClick={() => setWpState({...wpState, activeTab: 'participants'})} title="Show everyone">👥</button>
-                <button className={`wp-icon-btn ${wpState.activeTab === 'chat' ? 'active-text' : ''}`} onClick={() => setWpState({...wpState, activeTab: 'chat'})} title="Chat with everyone">💬</button>
-              </div>
-            </footer>
-          )}
-
-          {/* 🔥 BROWSE MOVIES MODAL (Inside Room) 🔥 */}
-          {showBrowseModal && (
-            <div className="wp-modal-overlay" onClick={() => setShowBrowseModal(false)}>
-              <div className="wp-browse-modal animate-scale-up" onClick={e => e.stopPropagation()}>
-                <div className="wp-lm-header">
-                  <h3>Select a Movie to Sync</h3>
-                  <button className="wp-close-btn" onClick={() => setShowBrowseModal(false)}>✕</button>
-                </div>
-                <div className="wp-movie-grid">
-                  {mockMovies.map(m => (
-                    <div key={m.id} className="wp-movie-card" style={{backgroundImage: `url(${m.backdrop_path})`}} onClick={() => handleSelectMovie(m)}>
-                      <div className="wp-mc-overlay">
-                        <span>▶ Play</span>
-                        <h4>{m.title}</h4>
-                      </div>
-                    </div>
+              <form onSubmit={(e) => handleAction('addProfile', e)} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+                <div className="hs-avatar-container">
+                  {avatarOptions.map((av) => (
+                    <div key={av} className={`hs-avatar ${newAvatar === av ? 'selected' : ''}`} onClick={() => setNewAvatar(av)}>{av}</div>
                   ))}
                 </div>
-              </div>
+                <div className="hs-input-group">
+                  <input type="text" value={newProfileName} onChange={(e) => setNewProfileName(e.target.value)} required autoFocus />
+                  <label>Profile Alias</label>
+                </div>
+                <button type="submit" className="hs-fab" disabled={isUpdating}>✓</button>
+              </form>
             </div>
-          )}
+          </div>
+        )}
 
+        <InlineStyles />
+      </div>
+    );
+  }
+
+  return (
+    <div className="dashboard-container">
+      {toast.show && (<div className={`custom-toast animate-toast-slide ${toast.type}`}><span className="toast-msg">{toast.message}</span></div>)}
+
+      <nav className={`net-navbar ${isScrolled || activeTab !== 'home' ? 'scrolled' : ''}`}>
+        <div className="net-nav-left">
+          <div className="net-brand" onClick={() => setShowGate(true)}>
+             <img src={logo} alt="Logo" className="brand-img" />
+             <span className="brand-text-colored">stream<span className="text-cyan">ify</span></span>
+          </div>
+          <ul className="net-nav-links">
+            <li className={activeTab === 'home' ? 'active' : ''} onClick={() => {setActiveTab('home'); setSearchQuery('');}}>Home</li>
+            <li onClick={() => showCustomToast('TV Shows coming soon')}>TV Shows</li>
+            <li onClick={() => showCustomToast('Movies coming soon')}>Movies</li>
+            <li className={activeTab === 'watchparty' ? 'active' : ''} onClick={() => setActiveTab('watchparty')}>Watch Party 🍿</li>
+          </ul>
         </div>
-      )}
+        <div className="net-nav-right">
+          <div className="net-search-box">
+            <span className="search-icon">🔍</span>
+            <input type="text" placeholder="Titles, people, genres" value={searchQuery} onChange={(e) => {setSearchQuery(e.target.value); if(activeTab !== 'home') setActiveTab('home');}} />
+          </div>
+          <div className="net-kids-link" onClick={() => setCurrentProfile('Kids')}><div className="kids-avatar-mini">🧸</div></div>
+          <div className="net-profile-trigger" onClick={() => handleAction('logout')} title="Logout">
+             <div className="net-main-avatar">{currentProfObj?.avatar || '👑'}</div>
+          </div>
+        </div>
+      </nav>
 
-      {/* ==========================================
-          🔥 CSS STYLES 🔥
-          ========================================== */}
-      <style>{`
-        /* =========================================
-           NEW DARK THEME LANDING PAGE CSS
-           ========================================= */
-        .wp-landing-wrapper { padding-top: 68px; min-height: 100vh; display: flex; flex-direction: column; background: #0a0a0c; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        .wp-landing-container { display: flex; flex-direction: column; justify-content: center; align-items: center; flex: 1; padding: 0 5%; }
-        .wp-glass-box { background: #18181b; border: 1px solid #27272a; border-radius: 16px; max-width: 900px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,0.5); position: relative; overflow: hidden; }
-        .wp-split-layout { display: flex; width: 100%; min-height: 400px; }
-        .wp-left-panel, .wp-right-panel { flex: 1; padding: 50px 40px; display: flex; flex-direction: column; align-items: center; text-align: center; }
-        .wp-vertical-divider { width: 1px; background: #27272a; margin: 40px 0; }
-        .wp-panel-icon { font-size: 32px; color: #a1a1aa; margin-bottom: 15px; }
-        .wp-panel-title { font-size: 22px; font-weight: 600; color: #f4f4f5; margin-bottom: 25px; }
+      <main className="main-content">
         
-        .wp-dropdown-wrapper { position: relative; width: 100%; max-width: 300px; margin-bottom: 40px; z-index: 50; }
-        .wp-btn-purple { width: 100%; display: flex; justify-content: space-between; align-items: center; background: #8b5cf6; color: white; border: none; padding: 0 20px; height: 50px; border-radius: 8px; font-size: 16px; font-weight: 500; cursor: pointer; transition: 0.2s; }
-        .wp-btn-purple:hover { background: #7c3aed; }
-        .wp-dropdown-arrow { font-size: 12px; }
-        .wp-dropdown-menu { position: absolute; top: calc(100% + 8px); left: 0; width: 100%; background: #27272a; border: 1px solid #3f3f46; border-radius: 8px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-        .wp-dropdown-item { padding: 15px 20px; display: flex; align-items: center; gap: 12px; color: #e4e4e7; font-size: 14px; cursor: pointer; transition: 0.2s; text-align: left; }
-        .wp-dropdown-item:hover { background: #3f3f46; color: white; }
-        .wp-dd-icon { font-size: 16px; color: #a1a1aa; }
+        {/* --- DYNAMIC TMDB TAB: HOME --- */}
+        {activeTab === 'home' && (
+          <div className="tab-content animate-fade-in">
+            {searchQuery.trim() !== '' ? (
+              <div style={{ paddingTop: '100px', minHeight: '100vh', paddingBottom: '50px' }}>
+                <h2 style={{ paddingLeft: '4%', marginBottom: '30px', fontSize: '24px', fontWeight: 'bold' }}>Search Results for "{searchQuery}"</h2>
+                <div className="search-results-grid">
+                  {searchResults.length > 0 ? searchResults.map((movie, index) => (
+                    <NetflixCard key={`search-${movie.id}`} movie={movie} index={index} />
+                  )) : (
+                    <p style={{ marginLeft: '4%', color: '#808080' }}>No movies found.</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="net-hero-banner" style={{ backgroundImage: heroMovie?.backdrop_path ? `url(https://image.tmdb.org/t/p/original${heroMovie.backdrop_path})` : 'url(https://images.unsplash.com/photo-1605806616949-1e87b487cb2a?q=80&w=2000)' }}>
+                  <div className="net-hero-vignette"></div>
+                  <div className="net-hero-content">
+                    <h1 className="cinematic-title">{heroMovie?.title || heroMovie?.name || "Loading..."}</h1>
+                    <div className="net-hero-meta">
+                      <span className="net-match">Top 10 in India Today</span>
+                      <span className="net-age">U/A 16+</span>
+                      <span className="net-hd">4K Ultra HD</span>
+                    </div>
+                    <p className="net-hero-desc">{heroMovie?.overview ? (heroMovie.overview.length > 180 ? heroMovie.overview.substring(0, 180) + "..." : heroMovie.overview) : "Fetching live data from TMDB..."}</p>
+                    <div className="net-hero-buttons">
+                      {/* 🔥 HERO BANNER PLAY PE DIRECT MOVIE STREAM CHALEGI */}
+                      <button className="net-btn-play" onClick={() => {
+                        if (heroMovie?.id) navigate(`/watch/${heroMovie.id}?play=true`);
+                      }}>
+                        <span>▶</span> Play
+                      </button>
+                      <button className="net-btn-info" onClick={() => {
+                        if (heroMovie?.id) navigate(`/watch/${heroMovie.id}`);
+                      }}>
+                        <span>ⓘ</span> More Info
+                      </button>
+                    </div>
+                  </div>
+                </div>
 
-        .wp-panel-desc { font-size: 14px; color: #a1a1aa; line-height: 1.5; max-width: 280px; }
-        .wp-panel-desc-small { font-size: 13px; color: #71717a; line-height: 1.5; max-width: 250px; margin-top: 20px;}
+                <div className="net-sliders-container">
+                  {visibleRows.map((row) => (
+                    <NetflixRow key={row.id} title={row.title} movies={movieData[row.dataKey]} isTop10Row={row.isTop10} />
+                  ))}
+                  <div ref={bottomBoundaryRef} style={{ width: '100%', height: '5px', background: 'transparent' }}></div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
-        .wp-join-form { width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
-        .wp-input-dark { width: 100%; background: #27272a; border: 1px solid #3f3f46; color: white; padding: 0 15px; height: 50px; border-radius: 8px; font-size: 15px; outline: none; transition: 0.2s; text-align: center; }
-        .wp-input-dark:focus { border-color: #8b5cf6; }
-        .wp-btn-join { width: 100%; height: 50px; background: #3f3f46; color: #a1a1aa; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: not-allowed; transition: 0.2s; }
-        .wp-btn-join.active { background: #e4e4e7; color: #18181b; cursor: pointer; }
-        .wp-btn-join.active:hover { background: white; }
-        .wp-box-footer { position: absolute; bottom: 15px; right: 25px; font-size: 12px; color: #71717a; }
-        .wp-landing-footer { margin-top: 30px; font-size: 13px; color: #71717a; text-align: center; }
+        {/* --- WATCH PARTY TAB --- */}
+        {activeTab === 'watchparty' && (
+          <WatchParty 
+             showCustomToast={showCustomToast} 
+             TMDB_IMAGE_BASE_URL={TMDB_IMAGE_BASE_URL} 
+          />
+        )}
 
-        @media (max-width: 800px) {
-          .wp-split-layout { flex-direction: column; min-height: auto; }
-          .wp-vertical-divider { width: 80%; height: 1px; margin: 0 auto; }
-          .wp-left-panel, .wp-right-panel { padding: 40px 20px; }
-          .wp-box-footer { position: static; text-align: center; padding: 15px; border-top: 1px solid #27272a; width: 100%; }
-        }
-
-        /* MODALS */
-        .wp-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 3000; display: flex; justify-content: center; align-items: center; }
-        .wp-later-modal, .wp-browse-modal { background: #18181b; width: 100%; border-radius: 12px; padding: 25px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); border: 1px solid #27272a; }
-        .wp-later-modal { max-width: 400px; }
-        .wp-browse-modal { max-width: 600px; }
-        .wp-lm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-        .wp-lm-header h3 { font-size: 18px; font-weight: 500; color: #f4f4f5; margin: 0; }
-        .wp-close-btn { background: transparent; border: none; font-size: 20px; color: #a1a1aa; cursor: pointer; transition: 0.2s;}
-        .wp-close-btn:hover { color: white; }
-        .wp-lm-text { font-size: 14px; color: #a1a1aa; line-height: 1.5; margin-bottom: 20px; }
-        .wp-lm-link-box { background: #27272a; padding: 12px 16px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; border: 1px solid #3f3f46; }
-        .wp-lm-link-text { color: #f4f4f5; font-size: 14px; letter-spacing: 0.5px; user-select: text; }
-        .wp-lm-copy-btn { background: transparent; border: none; font-size: 18px; cursor: pointer; color: #a1a1aa; transition: 0.2s; }
-        .wp-lm-copy-btn:hover { color: white; }
-
-        /* Movie Browser Grid */
-        .wp-movie-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
-        .wp-movie-card { height: 120px; border-radius: 8px; background-size: cover; background-position: center; position: relative; cursor: pointer; overflow: hidden; border: 2px solid transparent; transition: 0.2s;}
-        .wp-movie-card:hover { border-color: #8b5cf6; transform: scale(1.02); }
-        .wp-mc-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.6); display: flex; flex-direction: column; justify-content: center; align-items: center; opacity: 0; transition: 0.2s; color: white;}
-        .wp-movie-card:hover .wp-mc-overlay { opacity: 1; }
-        .wp-mc-overlay span { font-size: 20px; margin-bottom: 5px; color: #8b5cf6;}
-        .wp-mc-overlay h4 { font-size: 14px; text-align: center; padding: 0 10px; }
-
-        /* ACTIVE ROOM */
-        .wp-room-fullscreen { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: #0f0f11; z-index: 9999; display: flex; flex-direction: column; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;}
-        .wp-active-layout { display: flex; flex-direction: column; height: 100%; width: 100%; }
-        .wp-main-content { flex: 1; display: flex; padding: 15px; gap: 15px; overflow: hidden; background: #0f0f11; margin-top: 68px;}
-
-        /* Video Area */
-        .wp-video-col { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative;}
-        .wp-player-container { flex: 1; background: #18181b; border-radius: 12px; position: relative; background-size: cover; background-position: center; overflow: hidden; border: 1px solid #27272a; display: flex; justify-content: center; align-items: center;}
-        
-        .wp-blank-screen { text-align: center; color: #a1a1aa; display: flex; flex-direction: column; align-items: center; gap: 15px; padding: 40px; background: rgba(0,0,0,0.5); border-radius: 16px;}
-        .wp-blank-icon { font-size: 60px; margin-bottom: 10px; }
-        .wp-blank-screen h2 { color: white; font-size: 24px; }
-        .wp-browse-btn { background: #8b5cf6; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 10px; transition: 0.2s; }
-        .wp-browse-btn:hover { background: #7c3aed; }
-
-        .wp-screen-share-overlay { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 15px; }
-        .wp-ss-icon { font-size: 80px; }
-        .wp-stop-ss-btn { background: #ef4444; color: white; border: none; padding: 10px 24px; border-radius: 20px; font-weight: bold; cursor: pointer; margin-top: 10px;}
-        .wp-stop-ss-btn:hover { background: #dc2626; }
-
-        .wp-cc-text { position: absolute; bottom: 90px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); color: white; padding: 8px 16px; border-radius: 4px; font-size: 16px; font-family: sans-serif; letter-spacing: 0.5px;}
-
-        .wp-ready-popup { position: absolute; bottom: 20px; left: 20px; background: #18181b; border: 1px solid #27272a; border-radius: 12px; padding: 20px; width: 360px; box-shadow: 0 10px 25px rgba(0,0,0,0.8); z-index: 100;}
-        .wp-rp-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;}
-        .wp-rp-header h3 { color: #f4f4f5; font-size: 18px; font-weight: 500; margin: 0;}
-        .wp-close-btn-dark { background: transparent; border: none; color: #a1a1aa; font-size: 18px; cursor: pointer;}
-        .wp-close-btn-dark:hover { color: white; }
-        .wp-rp-add-btn { background: #8b5cf6; color: white; border: none; padding: 10px 16px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 15px; transition: 0.2s; width: 100%;}
-        .wp-rp-add-btn:hover { background: #7c3aed; }
-        .wp-rp-subtitle { color: #a1a1aa; font-size: 13px; margin-bottom: 10px; line-height: 1.4;}
-        .wp-rp-link-box { background: #27272a; padding: 10px 12px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border: 1px solid transparent;}
-        .wp-rp-link-box:hover { border-color: #3f3f46; }
-        .wp-rp-link-text { color: #f4f4f5; font-size: 13px; letter-spacing: 0.5px;}
-        .wp-rp-footer { display: flex; gap: 10px; font-size: 11px; color: #71717a; line-height: 1.4; align-items: flex-start;}
-
-        /* Video Controls */
-        .wp-player-controls { position: absolute; bottom: 0; left: 0; width: 100%; background: linear-gradient(to top, rgba(0,0,0,0.9), transparent); padding: 20px; display: flex; flex-direction: column; gap: 15px; }
-        .wp-player-title { font-size: 18px; font-weight: bold; text-shadow: 1px 1px 3px black; margin-bottom: -5px; }
-        .wp-progress-bar { width: 100%; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; position: relative; cursor: pointer; }
-        .wp-progress-fill { height: 100%; background: #8b5cf6; border-radius: 2px; transition: width 1s linear; }
-        .wp-progress-thumb { width: 12px; height: 12px; background: white; border-radius: 50%; position: absolute; top: -4px; box-shadow: 0 0 5px rgba(0,0,0,0.5); transition: left 1s linear; }
-        .wp-controls-row { display: flex; justify-content: space-between; align-items: center; }
-        .wp-cr-left, .wp-cr-right { display: flex; align-items: center; gap: 15px; }
-        .wp-time-text { font-size: 13px; color: #D1D5DB; }
-        .active-text { color: #8b5cf6 !important; font-weight: bold;}
-
-        /* Sidebar */
-        .wp-sidebar-col { width: 360px; background: #18181b; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; border: 1px solid #27272a;}
-        .wp-tabs { display: flex; border-bottom: 1px solid #27272a; }
-        .wp-tab { flex: 1; padding: 15px 0; background: transparent; border: none; color: #a1a1aa; font-size: 14px; font-weight: 500; cursor: pointer; transition: 0.2s;}
-        .wp-tab.active { border-bottom: 3px solid #8b5cf6; color: white;}
-        
-        .wp-chat-container { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 15px; }
-        .wp-msg-wrapper { display: flex; gap: 10px; width: 100%; flex-direction: column;}
-        .wp-msg-content { display: flex; flex-direction: column; gap: 4px; }
-        .wp-msg-header { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-        .wp-msg-name { color: #f4f4f5; font-weight: 500; }
-        .wp-msg-time { color: #71717a; font-size: 11px; }
-        .wp-msg-bubble { font-size: 13px; line-height: 1.4; color: #e4e4e7; }
-
-        .wp-participants-container { flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-        .wp-participant-item { display: flex; align-items: center; gap: 12px; padding: 10px; background: #27272a; border-radius: 8px; }
-        .wp-p-avatar { font-size: 24px; width: 40px; height: 40px; background: #3f3f46; border-radius: 50%; display: flex; justify-content: center; align-items: center;}
-        .wp-p-name { flex: 1; font-size: 14px; font-weight: 500; }
-        .wp-p-status { font-size: 12px; }
-        .wp-start-party-btn { background: transparent; border: 1px dashed #8b5cf6; color: #8b5cf6; padding: 10px; border-radius: 8px; cursor: pointer; transition: 0.2s; margin-top: 10px; }
-        .wp-start-party-btn:hover { background: rgba(139, 92, 246, 0.1); }
-
-        .wp-chat-input-box { padding: 15px; border-top: 1px solid #27272a; display: flex; gap: 10px; background: #18181b; }
-        .wp-chat-input-box input { flex: 1; background: #27272a; border: 1px solid #3f3f46; color: #f4f4f5; padding: 12px 15px; border-radius: 24px; outline: none; font-size: 13px; transition: 0.2s;}
-        .wp-chat-input-box input:focus { border-color: #8b5cf6; }
-        .wp-send-btn { background: transparent; border: none; color: #8b5cf6; font-size: 18px; cursor: pointer; transition: 0.2s; }
-        .wp-send-btn:hover { color: #7c3aed; transform: scale(1.1); }
-
-        /* BOTTOM CONTROL BAR */
-        .wp-bottom-bar { height: 80px; background: #0f0f11; display: flex; justify-content: space-between; align-items: center; padding: 0 20px; }
-        .wp-bb-time-room { display: flex; align-items: center; gap: 10px; color: #e4e4e7; font-size: 14px; font-weight: 500;}
-        .wp-divider-pipe { color: #3f3f46; }
-
-        .wp-bb-center { display: flex; align-items: center; gap: 12px; }
-        .wp-bb-main-icon { width: 44px; height: 44px; border-radius: 50%; background: #27272a; border: 1px solid #3f3f46; color: white; font-size: 16px; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; }
-        .wp-bb-main-icon:hover { background: #3f3f46; }
-        .wp-bb-main-icon.muted { background: #ef4444; color: white; border-color: #ef4444;}
-        .wp-bb-main-icon.active-border { border-color: #8b5cf6; color: #8b5cf6; }
-        .wp-bb-main-icon.recording-active { background: #ef4444; border-color: #ef4444; animation: blink 1.5s infinite;}
-        
-        .wp-bb-leave-btn { width: 64px; height: 44px; border-radius: 22px; background: #ef4444; border: none; color: white; font-size: 18px; cursor: pointer; transition: 0.2s; display: flex; justify-content: center; align-items: center; margin-left: 5px;}
-        .wp-bb-leave-btn:hover { background: #dc2626; }
-
-        .wp-bb-right { display: flex; align-items: center; gap: 15px; }
-        .wp-icon-btn { background: transparent; border: none; font-size: 18px; color: #a1a1aa; cursor: pointer; transition: 0.2s; }
-        .wp-icon-btn:hover { color: white; }
-
-        /* ANIMATIONS */
-        .animate-fade-in { animation: fadeIn 0.3s ease forwards; }
-        .animate-scale-up { animation: scaleUp 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; transform-origin: center;}
-        .animate-slide-up { animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes scaleUp { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-
-        /* Hide elements dynamically in Fullscreen mode handled via React instead of CSS mostly, but fallback just in case */
-        :fullscreen .wp-sidebar-col, :fullscreen .wp-bottom-bar, :fullscreen .wp-ready-popup { display: none !important; }
-
-        @media (max-width: 900px) {
-          .wp-active-layout { flex-direction: column; height: auto; }
-          .wp-sidebar-col { width: 100%; height: 400px; margin-top: 15px;}
-          .wp-bb-time-room, .wp-bb-right { display: none; } 
-          .wp-bottom-bar { justify-content: center; }
-          .wp-ready-popup { left: 5px; right: 5px; width: auto; bottom: 5px; }
-        }
-      `}</style>
+      </main>
+      <InlineStyles />
     </div>
   );
 }
+
+// ==========================================
+// 6. STYLES COMPONENT (FIXED CARD HOVER & CUT ISSUES)
+// ==========================================
+const InlineStyles = () => (
+  <style>{`
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { min-height: 100vh; overflow-y: auto !important; overflow-x: hidden; background-color: #141414; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .dashboard-container { min-height: 100vh; width: 100%; display: flex; flex-direction: column; overflow-x: hidden; }
+    .main-content { flex: 1; padding-bottom: 50px; overflow-y: visible; }
+
+    .net-navbar { position: fixed; top: 0; left: 0; width: 100%; height: 68px; padding: 0 4%; display: flex; justify-content: space-between; align-items: center; z-index: 2000; transition: background-color 0.4s ease; background: linear-gradient(to bottom, rgba(0,0,0,0.8) 10%, rgba(0,0,0,0)); }
+    .net-navbar.scrolled { background-color: #141414; box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
+    .net-nav-left, .net-nav-right { display: flex; align-items: center; gap: 20px; }
+    
+    .net-brand { display: flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+    .brand-img { height: 28px; filter: drop-shadow(0 0 5px rgba(6,182,212,0.5)); }
+    .brand-text-colored { font-size: 26px; font-weight: 900; color: #ffffff; letter-spacing: 1px; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); white-space: nowrap;}
+    .brand-text-colored .text-cyan { background: linear-gradient(to right, #a855f7, #00d2ff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; display: inline-block; }
+    
+    .net-nav-links { display: flex; list-style: none; gap: 20px; margin-left: 20px; }
+    .net-nav-links li { font-size: 14px; font-weight: 500; color: #e5e5e5; cursor: pointer; transition: 0.3s; white-space: nowrap;}
+    .net-nav-links li:hover, .net-nav-links li.active { color: #ffffff; font-weight: bold; }
+    
+    .net-search-box { display: flex; align-items: center; background: rgba(0,0,0,0.75); border: 1px solid #ffffff; padding: 5px 12px; border-radius: 4px; gap: 8px; }
+    .net-search-box input { background: transparent; border: none; color: white; outline: none; font-size: 14px; width: 200px; }
+    .net-main-avatar, .kids-avatar-mini { width: 32px; height: 32px; border-radius: 4px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .net-main-avatar { background: linear-gradient(135deg, #a855f7, #e50914); }
+    .kids-avatar-mini { background: #007bff; }
+
+    .net-hero-banner { width: 100%; height: 85vh; position: relative; background-color: #141414; background-size: cover; background-position: center top; transition: background-image 0.5s ease-in-out;}
+    .net-hero-vignette { position: absolute; inset: 0; background: linear-gradient(to right, rgba(20,20,20,0.9) 0%, rgba(20,20,20,0.2) 50%, transparent 100%), linear-gradient(to top, #141414 0%, transparent 25%); z-index: 1; }
+    .net-hero-content { position: absolute; z-index: 2; bottom: 18%; left: 4%; max-width: 45%; }
+    
+    .cinematic-title { font-size: 45px; font-weight: 900; line-height: 1.1; margin-bottom: 15px; color: #ffffff; text-transform: uppercase; text-shadow: 2px 2px 4px rgba(0,0,0,0.6); }
+    .net-hero-meta { display: flex; align-items: center; gap: 10px; font-weight: bold; color: #a3a3a3; margin-bottom: 15px; font-size: 14px; }
+    .net-match { color: #46d369; }
+    .net-age { border: 1px solid #a3a3a3; padding: 0 4px; border-radius: 2px; }
+    .net-hd { border: 1px solid #a3a3a3; padding: 0 4px; border-radius: 2px; font-size: 10px; }
+    .net-hero-desc { font-size: 16px; line-height: 1.5; margin-bottom: 25px; text-shadow: 1px 1px 2px rgba(0,0,0,0.8); }
+    .net-hero-buttons { display: flex; gap: 15px; }
+    .net-btn-play { background: #fff; color: #000; border: none; padding: 8px 24px; border-radius: 4px; font-size: 18px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
+    .net-btn-play:hover { background: rgba(255,255,255,0.75); }
+    .net-btn-info { background: rgba(109,109,110,0.7); color: #fff; border: none; padding: 8px 24px; border-radius: 4px; font-size: 18px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s; }
+    .net-btn-info:hover { background: rgba(109,109,110,0.4); }
+
+    .net-sliders-container { margin-top: -30px; position: relative; z-index: 10; padding-bottom: 50px; }
+    
+    .netflix-row-wrapper { margin-bottom: 30px; position: relative; z-index: 1; transition: z-index 0.2s; }
+    .netflix-row-wrapper:hover { z-index: 999 !important; } 
+
+    .netflix-row-title { 
+      font-size: 20px; 
+      font-weight: bold; 
+      margin-bottom: 12px; 
+      padding-left: 4%; 
+      color: #e5e5e5; 
+      position: relative; 
+      z-index: 2; 
+      text-shadow: 1px 1px 2px black;
+      text-align: left; 
+      display: block;
+      width: 100%;
+    }
+    
+    .netflix-row-container { position: relative; padding: 0 4%; }
+    
+    .slider-arrow { position: absolute; top: 0; bottom: 0; width: 4%; background: rgba(0,0,0,0.5); border: none; color: white; font-size: 40px; cursor: pointer; z-index: 20; opacity: 0; transition: opacity 0.3s ease, background 0.3s ease; display: flex; align-items: center; justify-content: center; }
+    .slider-arrow:hover { background: rgba(0,0,0,0.8); font-size: 50px; }
+    .left-arrow { left: 0; border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
+    .right-arrow { right: 0; border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
+    .netflix-row-wrapper:hover .slider-arrow { opacity: 1; }
+
+    /* 🔥 CLEAN ROW SCROLLING & OVERFLOW FIX 🔥 */
+    .netflix-row { 
+      display: flex; 
+      gap: 12px; 
+      overflow-x: auto; 
+      overflow-y: visible; 
+      padding-top: 40px; 
+      padding-bottom: 160px; 
+      margin-top: -40px; 
+      margin-bottom: -160px; 
+      scroll-behavior: smooth; 
+      will-change: transform; 
+      scrollbar-width: none;
+    }
+    .netflix-row::-webkit-scrollbar { display: none; }
+
+    /* 🔥 CARD CUT & HOVER FIX 🔥 */
+    .netflix-card-container { 
+      min-width: 250px; 
+      width: 250px; 
+      height: 140px; 
+      background-color: #141414; 
+      border-radius: 6px; 
+      position: relative; 
+      cursor: pointer; 
+      transition: transform 0.25s cubic-bezier(0.33, 1, 0.68, 1), box-shadow 0.25s ease; 
+      z-index: 1; 
+      will-change: transform;
+    }
+    .origin-center { transform-origin: center center; }
+    .origin-left { transform-origin: left center; }
+    .origin-right { transform-origin: right center; }
+
+    .card-image-wrapper { 
+      width: 100%; 
+      height: 100%; 
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+      border-radius: 6px; 
+      overflow: hidden; 
+      background: #222;
+    }
+    .netflix-card-img { width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+    .netflix-card-trailer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none; }
+    
+    .net-movie-title-overlay { position: absolute; bottom: 8px; left: 10px; right: 10px; font-weight: bold; font-size: 14px; text-shadow: 1px 1px 4px black; z-index: 5; text-align: center; opacity: 1; transition: 0.3s; }
+    
+    /* 🔥 TOP 10 BADGE CUT FIX 🔥 */
+    .net-top10-badge { 
+      position: absolute; 
+      top: 0; 
+      left: 0; 
+      background: #e50914; 
+      color: white; 
+      padding: 4px 8px; 
+      font-size: 11px; 
+      font-weight: 900; 
+      line-height: 1.2; 
+      border-bottom-right-radius: 6px; 
+      border-top-left-radius: 6px; 
+      text-align: center; 
+      z-index: 15; 
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.5); 
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .recently-added-badge { 
+      position: absolute; 
+      bottom: 0; 
+      left: 50%; 
+      transform: translateX(-50%); 
+      background: #e50914; 
+      color: white; 
+      padding: 4px 10px; 
+      font-size: 11px; 
+      font-weight: bold; 
+      border-top-left-radius: 4px; 
+      border-top-right-radius: 4px; 
+      z-index: 10; 
+      opacity: 0; 
+      transition: opacity 0.3s; 
+      white-space: nowrap; 
+      box-shadow: 0 -2px 5px rgba(0,0,0,0.5); 
+    }
+
+    .netflix-card-details { 
+      position: absolute; 
+      top: 100%; 
+      left: 0; 
+      right: 0; 
+      background-color: #181818; 
+      padding: 15px; 
+      border-bottom-left-radius: 6px; 
+      border-bottom-right-radius: 6px; 
+      opacity: 0; 
+      visibility: hidden; 
+      transition: opacity 0.2s ease, visibility 0.2s ease; 
+      box-shadow: 0 15px 30px rgba(0,0,0,0.95); 
+      z-index: 100; 
+      border: 1px solid #333; 
+      border-top: none; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 10px; 
+    }
+    
+    /* 🔥 HOVER EFFECT EXPANSION 🔥 */
+    .netflix-card-container:hover { 
+      transform: scale(1.35) !important; 
+      z-index: 1000 !important; 
+      box-shadow: 0 15px 40px rgba(0,0,0,0.9); 
+      border-bottom-left-radius: 0; 
+      border-bottom-right-radius: 0; 
+    }
+    .netflix-card-container:hover .card-image-wrapper { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+    .netflix-card-container:hover .netflix-card-details { opacity: 1; visibility: visible; }
+    .netflix-card-container:hover .recently-added-badge { opacity: 1; }
+    .netflix-card-container:hover .net-movie-title-overlay { opacity: 0; }
+
+    .ncd-buttons { display: flex; justify-content: space-between; align-items: center; margin-top: 5px; }
+    .ncd-actions-left { display: flex; gap: 8px; }
+    .ncd-btn { width: 34px; height: 34px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.4); background: #2a2a2a; color: white; display: flex; justify-content: center; align-items: center; cursor: pointer; font-size: 16px; transition: 0.2s; }
+    .ncd-btn:hover { border-color: white; background: #444; }
+    .play-btn-exact { background: white; color: black; border-color: white; padding-left: 2px; font-size: 16px; }
+    .play-btn-exact:hover { background: #e5e5e5; }
+
+    .ncd-meta { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: bold; color: #bcbcbc; margin-top: 2px;}
+    .ncd-match { color: #46d369; }
+    .ncd-age-badge { background: transparent; border: 1px solid #808080; padding: 1px 6px; border-radius: 2px; color: white; font-size: 11px; }
+    .ncd-hd-badge { border: 1px solid #808080; padding: 1px 4px; border-radius: 2px; font-size: 10px; color: white; }
+    .ncd-meta .dot { font-size: 10px; }
+
+    .ncd-genres { font-size: 13px; color: #fff; font-weight: 500; display: flex; align-items: center;}
+    .ncd-genres .pipe { color: #666; margin: 0 8px; font-weight: normal; font-size: 10px;}
+
+    .search-results-grid { display: flex; flex-wrap: wrap; gap: 20px; padding: 0 4%; justify-content: flex-start; overflow-y: visible; padding-top: 40px; margin-top: -40px;}
+
+    /* Modal Styles */
+    .hs-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000; display: flex; justify-content: center; align-items: center; padding: 15px;}
+    .hs-modal-content { width: 100%; max-width: 450px; background: #141414; display: flex; flex-direction: column; padding: 25px; border-radius: 8px; border: 1px solid #333; }
+    .hs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+    .hs-back-btn { background: transparent; border: none; color: white; font-size: 26px; cursor: pointer; }
+    .hs-header h2 { font-size: 20px; color: white; }
+    .hs-avatar-container { display: flex; gap: 15px; justify-content: center; margin-bottom: 30px; overflow-x: auto; padding-bottom: 10px; scrollbar-width: none; }
+    .hs-avatar { min-width: 50px; height: 50px; border-radius: 50%; background: #222; display: flex; justify-content: center; align-items: center; font-size: 24px; cursor: pointer; opacity: 0.5; transition: 0.3s; }
+    .hs-avatar.selected { opacity: 1; border: 3px solid white; background: linear-gradient(135deg, #007bff, #e50914); transform: scale(1.1); box-shadow: 0 0 15px rgba(229,9,20,0.4); }
+    .hs-input-group { position: relative; margin-bottom: 30px; }
+    .hs-input-group input { width: 100%; background: transparent; border: 1.5px solid #444; border-radius: 4px; padding: 18px 15px; color: white; font-size: 16px; outline: none; }
+    .hs-input-group label { position: absolute; top: -10px; left: 15px; background: #141414; padding: 0 5px; font-size: 13px; color: #888; }
+    .hs-fab { width: 100%; padding: 15px; border-radius: 4px; background: #e50914; border: none; color: white; font-size: 18px; font-weight: bold; cursor: pointer; }
+
+    .animate-fade-in { animation: fadeIn 0.3s ease forwards; }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    .gate-container { width: 100vw; height: 100vh; background: #141414; color: white; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+    .gate-header { position: absolute; top: 30px; left: 4%; display: flex; align-items: center; gap: 10px; }
+    .gate-logo { height: 36px; filter: drop-shadow(0 0 8px rgba(6,182,212,0.5)); }
+    .gate-main-title { font-size: 3.5vw; font-weight: 500; margin-bottom: 2em; text-align: center; }
+    .gate-profiles-grid { display: flex !important; flex-direction: row !important; align-items: center !important; justify-content: center !important; gap: 35px !important; flex-wrap: wrap !important; width: 100%; max-width: 900px; margin: 0 auto; }
+    .gate-profile-card { display: flex; flex-direction: column; align-items: center; gap: 12px; cursor: pointer; transition: transform 0.25s ease-in-out; }
+    .gate-profile-card:hover { transform: scale(1.08); }
+    .gate-avatar-box { width: 130px !important; height: 130px !important; border-radius: 8px; background: linear-gradient(135deg, #a855f7, #06b6d4); display: flex; align-items: center; justify-content: center; font-size: 55px; border: 3px solid transparent; transition: all 0.2s ease; }
+    .gate-profile-card:hover .gate-avatar-box { border-color: #ffffff !important; }
+    .gate-add-box { background: transparent; border: 3px solid #808080; color: #808080; }
+    .gate-profile-name { font-size: 16px !important; color: #808080; font-weight: 500; }
+
+    /* =========================================
+       📱 MOBILE RESPONSIVENESS FIXES 📱
+       ========================================= */
+    @media (max-width: 768px) {
+      .net-navbar { padding: 0 15px; }
+      .net-nav-links li:not(:first-child) { display: none; }
+      .net-nav-links { gap: 10px; margin-left: 10px; }
+      .brand-text-colored { font-size: 20px; }
+      .brand-img { height: 22px; }
+      
+      .net-search-box input { width: 90px; font-size: 13px; }
+      .kids-avatar-mini { display: none; }
+      .net-main-avatar { width: 28px; height: 28px; }
+      
+      .net-hero-banner { height: 60vh; }
+      .net-hero-content { bottom: 5%; left: 15px; max-width: 90%; }
+      .cinematic-title { font-size: 28px; margin-bottom: 10px; }
+      .net-hero-desc { font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 15px; }
+      .net-btn-play, .net-btn-info { padding: 6px 14px; font-size: 14px; }
+      
+      .netflix-row-title { font-size: 16px; padding-left: 15px; margin-bottom: 5px; text-align: left; display: block; width: 100%; }
+      .netflix-row-container { padding: 0 15px; }
+      .slider-arrow { display: none; } 
+      
+      .netflix-card-container { min-width: 140px; width: 140px; height: 80px; }
+      .netflix-card-container:hover { transform: scale(1.05) !important; z-index: 10 !important; }
+      .netflix-card-details { display: none !important; }
+      .recently-added-badge { display: none !important; }
+      
+      .gate-main-title { font-size: 24px; }
+      .gate-avatar-box { width: 80px !important; height: 80px !important; font-size: 35px; }
+      .gate-profiles-grid { gap: 15px !important; }
+    }
+  `}</style>
+);
