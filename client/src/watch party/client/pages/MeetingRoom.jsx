@@ -15,7 +15,8 @@ export default function MeetingRoom() {
 
   // 🔥 VALIDATION ENGINE: Check if room exists before showing UI
   useEffect(() => {
-    fetch(`http://localhost:5000/api/rooms/${roomId}`)
+   const API_URL = import.meta.env.VITE_SOCKET_SERVER_URL || "https://streamfiy-backend.vercel.app";
+    fetch(`${API_URL}/api/rooms/${roomId}`)
       .then((res) => {
         if (!res.ok) throw new Error("This meeting link is invalid or has expired.");
         return res.json();

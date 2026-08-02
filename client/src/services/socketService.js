@@ -1,7 +1,8 @@
 import { io } from "socket.io-client";
 
 const SOCKET_SERVER_URL =
-  import.meta.env.VITE_SOCKET_SERVER_URL || "http://localhost:5000";
+  import.meta.env.VITE_SOCKET_SERVER_URL ||
+  "https://streamfiy-backend.vercel.app";
 
 class SocketService {
   constructor() {

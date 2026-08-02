@@ -32,11 +32,12 @@ export default function LandingPage() {
     const tempHostId = `host_${Math.random().toString(36).substring(2, 9)}`; 
 
     try {
-      const response = await fetch(`http://localhost:5000/api/rooms`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roomId: newRoomCode, hostId: tempHostId })
-      });
+      const API_URL = import.meta.env.VITE_SOCKET_SERVER_URL || "https://streamfiy-backend.vercel.app";
+      const response = await fetch(`${API_URL}/api/rooms`, {
+      method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ roomId: newRoomCode, hostId: tempHostId })
+});
 
       if (response.ok) {
         // 🔥 Updated Watch Party Toast Messaging

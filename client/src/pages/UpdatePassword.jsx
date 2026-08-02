@@ -67,9 +67,8 @@ export default function UpdatePassword() {
       }
 
       // 🔥 Step 3: Backend API call for automatic email notification
-      const API_URL = window.location.hostname === 'localhost' 
-        ? 'http://localhost:5000' 
-        : 'https://streamify-backend-ptmq.onrender.com'; 
+      const API_BASE_URL = import.meta.env.VITE_SOCKET_SERVER_URL || "https://streamfiy-backend.vercel.app";
+const API_URL = `${API_BASE_URL}/api/rooms`;
 
       try {
         await fetch(`${API_URL}/api/send-password-update`, {
