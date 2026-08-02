@@ -1,167 +1,130 @@
 const express = require("express");
 const cors = require("cors");
-const nodemailer = require("nodemailer");
-const { initializeApp, cert, getApps } = require("firebase-admin/app");
-const { getAuth } = require("firebase-admin/auth");
-require("dotenv").config();
+const http = require("http");
+const { Server } = require("socket.io");
+
+const roomStore = require("./socket/store/roomStore");
+const registerRoomHandlers = require("./socket/handlers/room.handler");
+const registerLobbyHandlers = require("./socket/handlers/lobby.handler");
 
 const app = express();
+const server = http.createServer(app);
+
+// ==========================================================
+// 🔥 1. ROBUST CORS & PREFLIGHT CONFIGURATION FOR VERCEL
+// ==========================================================
+app.use(
+  cors({
+    origin: "*", // Ya apna exact frontend origin: "https://streamify-app-ms.vercel.app"
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+  }),
+);
+
+// Explicitly handle all preflight OPTIONS requests across all routes
+app.options("*", cors());
+
 app.use(express.json());
-app.use(cors());
 
-// 🔥 Root Route (Vercel serverless checks)
-app.get("/", (req, res) => res.status(200).send("Streamify API is Live! 🚀"));
-
-// =================================================================
-// 🔥 FIREBASE ADMIN SETUP (Vercel & Local Compatibility)
-// =================================================================
-try {
-  let serviceAccount;
-  if (process.env.FIREBASE_CREDENTIALS) {
-    serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
-  } else {
-    serviceAccount = require("./serviceAccountKey.json");
-  }
-
-  // Prevents "Default app already exists" crash on Vercel redeploys
-  if (!getApps().length) {
-    initializeApp({
-      credential: cert(serviceAccount),
-    });
-    console.log("[Success]: Firebase Admin Initialized");
-  } else {
-    console.log("[Info]: Firebase Admin already initialized");
-  }
-} catch (error) {
-  console.error(
-    "[CRITICAL ERROR]: Firebase Admin Init Failed. Check Environment Variables!",
-    error.message,
-  );
-}
-
-// =================================================================
-// 🔥 BREVO SMTP SETUP & VERIFICATION
-// =================================================================
-const transporter = nodemailer.createTransport({
-  host: "smtp-relay.brevo.com",
-  port: 587,
-  secure: false, // true for port 465, false for 587
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
+// ==========================================================
+// 🔥 2. SOCKET.IO SETUP
+// ==========================================================
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+    credentials: true,
   },
+  transports: ["polling", "websocket"],
 });
 
-// Verify SMTP connection on startup
-transporter.verify((error, success) => {
-  if (error) {
-    console.warn(
-      "[SMTP Warning]: Mail Server offline or credentials invalid ->",
-      error.message,
-    );
-  } else {
-    console.log("[Success]: Brevo SMTP Server Ready for Delivery");
-  }
-});
+// ==========================================================
+// 🔥 3. REST API: ROOM CREATION & VALIDATION
+// ==========================================================
 
-// =================================================================
-// 1. WELCOME EMAIL ROUTE
-// =================================================================
-app.post("/api/send-welcome-email", async (req, res) => {
-  const { name, email } = req.body;
-
-  // Input safety check
-  if (!email || !email.includes("@")) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Valid email is required" });
-  }
-
+// Create/Provision a new meeting room
+app.post("/api/rooms", (req, res) => {
   try {
-    const mailOptions = {
-      from: `"Streamify Support" <support.mstech4407@gmail.com>`,
-      to: email,
-      subject: "Welcome to Streamify! 🎬",
-      html: `
-        <div style="background-color: #09090E; color: #ffffff; padding: 30px; font-family: sans-serif; border-radius: 12px;">
-          <h2 style="color: #a855f7;">Welcome to Streamify, ${name || "Streamer"}! 🎉</h2>
-          <p style="color: #9ca3af; font-size: 14px;">We are thrilled to have you on board. Your account has been successfully created and linked.</p>
-          <hr style="border: 1px solid rgba(255,255,255,0.1); margin: 20px 0;" />
-          <p style="font-size: 12px; color: #6b7280;">If you have any questions, reach out to us directly at support.mstech.</p>
-        </div>
-      `,
-    };
+    const { roomId, hostId } = req.body;
 
-    await transporter.sendMail(mailOptions);
-    console.log(`[Success]: Welcome email sent to ${email}`);
-
-    return res
-      .status(200)
-      .json({ success: true, message: "Welcome email sent successfully!" });
-  } catch (error) {
-    console.error("[Error]: Welcome email delivery failed ->", error.message);
-    return res
-      .status(500)
-      .json({ success: false, message: "Failed to deliver email" });
-  }
-});
-
-// =================================================================
-// 2. PASSWORD RESET EMAIL ROUTE
-// =================================================================
-app.post("/api/send-reset-email", async (req, res) => {
-  const { email } = req.body;
-
-  if (!email || !email.includes("@")) {
-    return res
-      .status(400)
-      .json({ success: false, message: "Valid email is required" });
-  }
-
-  try {
-    const actionCodeSettings = {
-      url: "https://streamify-app-ms.vercel.app/login?mode=resetPassword",
-      handleCodeInApp: false,
-    };
-
-    // Generate Firebase secure reset link
-    const resetLink = await getAuth().generatePasswordResetLink(
-      email,
-      actionCodeSettings,
-    );
-
-    const mailOptions = {
-      from: `"Streamify Support" <support.mstech4407@gmail.com>`,
-      to: email,
-      subject: "Reset your Streamify Password 🔐",
-      html: `
-        <div style="background-color: #09090E; color: #ffffff; padding: 30px; font-family: sans-serif; border-radius: 12px; text-align: center;">
-          <h2 style="color: #a855f7; margin-bottom: 20px;">Password Reset Request</h2>
-          <p style="color: #9ca3af; font-size: 14px; margin-bottom: 30px;">We received a request to reset your password for your Streamify account. Click the button below to create a new one.</p>
-          <a href="${resetLink}" style="display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #a855f7, #3b82f6); color: white; text-decoration: none; border-radius: 8px; font-weight: bold; box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4);">Set New Password</a>
-        </div>
-      `,
-    };
-
-    await transporter.sendMail(mailOptions);
-    console.log(`[Success]: Reset email sent to ${email}`);
-
-    return res
-      .status(200)
-      .json({ success: true, message: "Reset email sent successfully!" });
-  } catch (error) {
-    console.error("[Error]: Generating reset link failed ->", error.message);
-
-    // Check if the user does not exist in Firebase Auth
-    if (error.code === "auth/user-not-found") {
+    if (!roomId) {
       return res
-        .status(404)
-        .json({ success: false, message: "No account found with this email" });
+        .status(400)
+        .json({ success: false, message: "Room ID is required" });
     }
 
+    // Register room in store
+    roomStore.createRoom(roomId, hostId);
+    console.log(
+      `[API Room Created]: ${roomId} by host ${hostId || "Anonymous"}`,
+    );
+
+    return res
+      .status(200)
+      .json({
+        success: true,
+        roomId,
+        message: "Room provisioned successfully",
+      });
+  } catch (error) {
+    console.error("[API Error creating room]:", error.message);
     return res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// 🔥 VERCEL SERVERLESS EXPORT
-module.exports = app;
+// Validate if room exists before joining
+app.get("/api/rooms/:roomId", (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const room = roomStore.getRoom(roomId);
+
+    if (!room) {
+      return res
+        .status(404)
+        .json({
+          success: false,
+          message: "This meeting link is invalid or has expired.",
+        });
+    }
+
+    return res.status(200).json({ success: true, room });
+  } catch (error) {
+    console.error("[API Error validating room]:", error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// Root Health Check Route
+app.get("/", (req, res) => {
+  res.status(200).send("Streamify Watch Party & Meet Backend is Live! 🚀");
+});
+
+// ==========================================================
+// 🔥 4. SOCKET.IO CONNECTION & EVENT ROUTING
+// ==========================================================
+io.on("connection", (socket) => {
+  console.log(`⚡ [Socket Connected]: ${socket.id}`);
+
+  // Register modular socket handlers
+  registerRoomHandlers(io, socket, roomStore);
+  registerLobbyHandlers(io, socket, roomStore);
+
+  socket.on("disconnect", (reason) => {
+    console.log(`⚠️ [Socket Disconnected]: ${socket.id} due to ${reason}`);
+  });
+});
+
+// ==========================================================
+// 🔥 5. SERVER START (Local & Serverless Compatible)
+// ==========================================================
+const PORT = process.env.PORT || 5000;
+
+if (process.env.NODE_ENV !== "production") {
+  server.listen(PORT, () => {
+    console.log(`🚀 Watch Party Server running locally on port ${PORT}`);
+  });
+}
+
+// Export for Serverless / Vercel deployment if required
+module.exports = { app, server, io };
