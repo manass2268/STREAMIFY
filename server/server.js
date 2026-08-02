@@ -60,13 +60,11 @@ app.post("/api/rooms", (req, res) => {
       `[API Room Created]: ${roomId} by host ${hostId || "Anonymous"}`,
     );
 
-    return res
-      .status(200)
-      .json({
-        success: true,
-        roomId,
-        message: "Room provisioned successfully",
-      });
+    return res.status(200).json({
+      success: true,
+      roomId,
+      message: "Room provisioned successfully",
+    });
   } catch (error) {
     console.error("[API Error creating room]:", error.message);
     return res.status(500).json({ success: false, message: error.message });
@@ -80,12 +78,10 @@ app.get("/api/rooms/:roomId", (req, res) => {
     const room = roomStore.getRoom(roomId);
 
     if (!room) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message: "This meeting link is invalid or has expired.",
-        });
+      return res.status(404).json({
+        success: false,
+        message: "This meeting link is invalid or has expired.",
+      });
     }
 
     return res.status(200).json({ success: true, room });
@@ -125,6 +121,57 @@ if (process.env.NODE_ENV !== "production") {
     console.log(`🚀 Watch Party Server running locally on port ${PORT}`);
   });
 }
+
+// ==========================================================
+// 🔥 WATCH PARTY ROOM STORAGE & API ROUTES (Merged into Main Server)
+// ==========================================================
+const rooms = new Map(); // Simple in-memory room store
+
+// 1. Create Room API
+app.post("/api/rooms", (req, res) => {
+  try {
+    const { roomId, hostId } = req.body;
+    if (!roomId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Room ID is required" });
+    }
+    rooms.set(roomId, { hostId, createdAt: Date.now() });
+    console.log(
+      `[API Room Created]: ${roomId} by host ${hostId || "Anonymous"}`,
+    );
+    return res
+      .status(200)
+      .json({
+        success: true,
+        roomId,
+        message: "Room provisioned successfully",
+      });
+  } catch (error) {
+    console.error("[API Error creating room]:", error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 2. Validate Room API
+app.get("/api/rooms/:roomId", (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const room = rooms.get(roomId);
+    if (!room) {
+      return res
+        .status(404)
+        .json({
+          success: false,
+          message: "This meeting link is invalid or has expired.",
+        });
+    }
+    return res.status(200).json({ success: true, room });
+  } catch (error) {
+    console.error("[API Error validating room]:", error.message);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
 
 // Export for Serverless / Vercel deployment if required
 module.exports = { app, server, io };
