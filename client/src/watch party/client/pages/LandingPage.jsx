@@ -33,7 +33,7 @@ export default function LandingPage() {
 
     try {
       const API_URL = import.meta.env.VITE_SOCKET_SERVER_URL || "https://streamfiy-backend.vercel.app";
-      const response = await fetch(`${API_URL}/api/rooms`, {
+      const response = await fetch(`${API_URL.replace(/\/+$/, '')}/api/rooms`, {
       method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({ roomId: newRoomCode, hostId: tempHostId })
