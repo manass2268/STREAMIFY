@@ -38,7 +38,7 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
 
-  // 🔥 TMDB CATEGORY STATES 🔥
+  // TMDB CATEGORY STATES
   const [heroMovie, setHeroMovie] = useState(null);
   const [movieData, setMovieData] = useState({
     trending: [], comingSoon: [], topRated: [], action: [], comedy: [], 
@@ -51,7 +51,7 @@ export default function Dashboard() {
   const currentProfObj = profiles.find(p => p.name === currentProfile);
 
   // ==========================================
-  // 🔥 SMART VERTICAL INFINITE SCROLL ENGINE 🔥
+  // SMART VERTICAL INFINITE SCROLL ENGINE
   // ==========================================
   const baseAdultRows = [
     { id: 'r1', title: 'Trending Now', dataKey: 'trending', isTop10: true },
@@ -95,7 +95,7 @@ export default function Dashboard() {
   }, [loadMoreRows]);
 
   // ==========================================
-  // 2. API FETCHING & STRICT DATE FILTERING
+  // API FETCHING & STRICT DATE FILTERING
   // ==========================================
   useEffect(() => {
     const fetchAllMovies = async () => {
@@ -242,7 +242,7 @@ export default function Dashboard() {
   const handleProfileClick = (profile) => { setCurrentProfile(profile.name); setShowGate(false); };
 
   // ==========================================
-  // 4. MINI COMPONENTS (NETFLIX CARDS)
+  // MINI COMPONENTS (NETFLIX CARDS)
   // ==========================================
 
   const NetflixCard = React.memo(({ movie, index, isTop10 }) => {
@@ -289,10 +289,7 @@ export default function Dashboard() {
         className={`netflix-card-container ${originClass}`} 
         onMouseEnter={handleMouseEnter} 
         onMouseLeave={handleMouseLeave}
-        onClick={() => {
-          // 🔥 CARD PE CLICK KARNE PE NETFLIX STYLE MODAL KHULEGA
-          navigate(`/watch/${movie.id}`);
-        }}
+        onClick={() => { navigate(`/watch/${movie.id}`); }}
       >
         <div className="card-image-wrapper">
           <img src={`${TMDB_IMAGE_BASE_URL}${imagePath}`} alt={title} className="netflix-card-img" loading="lazy" />
@@ -308,36 +305,27 @@ export default function Dashboard() {
         <div className="netflix-card-details">
           <div className="ncd-buttons">
             <div className="ncd-actions-left">
-              {/* 🔥 PLAY BUTTON PE CLICK KARNE PE DIRECT MOVIE STREAM CHALEGI (?play=true) 🔥 */}
               <button 
                 className="ncd-btn play-btn-exact" 
                 onClick={(e) => {
-                  e.stopPropagation(); // Card click event ko rokrega
-                  if (!isUpcoming) {
-                    navigate(`/watch/${movie.id}?play=true`);
-                  } else {
-                    showCustomToast("This movie is not released yet!", "error");
-                  }
+                  e.stopPropagation();
+                  if (!isUpcoming) { navigate(`/watch/${movie.id}?play=true`); } 
+                  else { showCustomToast("This movie is not released yet!", "error"); }
                 }} 
                 title="Play Direct"
               >
                  <svg viewBox="0 0 24 24" width="20" height="20" fill="black"><path d="M6 4l15 8-15 8z"></path></svg>
               </button>
-              
               <button className="ncd-btn round-btn" onClick={(e) => { e.stopPropagation(); showCustomToast(isUpcoming ? `Remind Me Added` : `Added to My List`, 'success'); }} title={isUpcoming ? "Remind Me" : "Add"}>
                  {isUpcoming ? <span style={{fontSize: '18px'}}>🔔</span> : <svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2h6z"></path></svg>}
               </button>
               <button className="ncd-btn round-btn" onClick={(e) => e.stopPropagation()} title="Like"><svg viewBox="0 0 24 24" width="14" height="14" fill="white"><path d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"></path></svg></button>
             </div>
             
-            {/* MORE INFO BUTTON MODAL KHULEGA */}
             <button 
               className="ncd-btn round-btn info-btn" 
               title="More Info"
-              onClick={(e) => {
-                e.stopPropagation();
-                navigate(`/watch/${movie.id}`);
-              }}
+              onClick={(e) => { e.stopPropagation(); navigate(`/watch/${movie.id}`); }}
             >
               <svg viewBox="0 0 24 24" width="16" height="16" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"></path></svg>
             </button>
@@ -395,8 +383,7 @@ export default function Dashboard() {
     );
   });
 
-  // ==========================================
-  // 5. MAIN RENDER (UI)
+  // ===================
   // ==========================================
 
   if (showGate) {
@@ -424,7 +411,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Create Profile Modal */}
         {showAddProfileModal && (
           <div className="hs-modal-overlay animate-fade-in">
             <div className="hs-modal-content">
@@ -458,7 +444,7 @@ export default function Dashboard() {
     <div className="dashboard-container">
       {toast.show && (<div className={`custom-toast animate-toast-slide ${toast.type}`}><span className="toast-msg">{toast.message}</span></div>)}
 
-      <nav className={`net-navbar ${isScrolled || activeTab !== 'home' ? 'scrolled' : ''}`}>
+      <nav className={`net-navbar ${isScrolled ? 'scrolled' : ''}`}>
         <div className="net-nav-left">
           <div className="net-brand" onClick={() => setShowGate(true)}>
              <img src={logo} alt="Logo" className="brand-img" />
@@ -468,7 +454,14 @@ export default function Dashboard() {
             <li className={activeTab === 'home' ? 'active' : ''} onClick={() => {setActiveTab('home'); setSearchQuery('');}}>Home</li>
             <li onClick={() => showCustomToast('TV Shows coming soon')}>TV Shows</li>
             <li onClick={() => showCustomToast('Movies coming soon')}>Movies</li>
-            <li className={activeTab === 'watchparty' ? 'active' : ''} onClick={() => setActiveTab('watchparty')}>Watch Party 🍿</li>
+            
+            {/* 🔥 SMART WATCH PARTY REDIRECT: Passes current Firebase UID token so authenticated users skip login */}
+            <li 
+              onClick={() => {
+                navigate('/watchparty'); 
+              }}>
+              Watch Party 🍿
+            </li>
           </ul>
         </div>
         <div className="net-nav-right">
@@ -484,68 +477,50 @@ export default function Dashboard() {
       </nav>
 
       <main className="main-content">
-        
-        {/* --- DYNAMIC TMDB TAB: HOME --- */}
-        {activeTab === 'home' && (
-          <div className="tab-content animate-fade-in">
-            {searchQuery.trim() !== '' ? (
-              <div style={{ paddingTop: '100px', minHeight: '100vh', paddingBottom: '50px' }}>
-                <h2 style={{ paddingLeft: '4%', marginBottom: '30px', fontSize: '24px', fontWeight: 'bold' }}>Search Results for "{searchQuery}"</h2>
-                <div className="search-results-grid">
-                  {searchResults.length > 0 ? searchResults.map((movie, index) => (
-                    <NetflixCard key={`search-${movie.id}`} movie={movie} index={index} />
-                  )) : (
-                    <p style={{ marginLeft: '4%', color: '#808080' }}>No movies found.</p>
-                  )}
-                </div>
+        <div className="tab-content animate-fade-in">
+          {searchQuery.trim() !== '' ? (
+            <div style={{ paddingTop: '100px', minHeight: '100vh', paddingBottom: '50px' }}>
+              <h2 style={{ paddingLeft: '4%', marginBottom: '30px', fontSize: '24px', fontWeight: 'bold' }}>Search Results for "{searchQuery}"</h2>
+              <div className="search-results-grid">
+                {searchResults.length > 0 ? searchResults.map((movie, index) => (
+                  <NetflixCard key={`search-${movie.id}`} movie={movie} index={index} />
+                )) : (
+                  <p style={{ marginLeft: '4%', color: '#808080' }}>No movies found.</p>
+                )}
               </div>
-            ) : (
-              <>
-                <div className="net-hero-banner" style={{ backgroundImage: heroMovie?.backdrop_path ? `url(https://image.tmdb.org/t/p/original${heroMovie.backdrop_path})` : 'url(https://images.unsplash.com/photo-1605806616949-1e87b487cb2a?q=80&w=2000)' }}>
-                  <div className="net-hero-vignette"></div>
-                  <div className="net-hero-content">
-                    <h1 className="cinematic-title">{heroMovie?.title || heroMovie?.name || "Loading..."}</h1>
-                    <div className="net-hero-meta">
-                      <span className="net-match">Top 10 in India Today</span>
-                      <span className="net-age">U/A 16+</span>
-                      <span className="net-hd">4K Ultra HD</span>
-                    </div>
-                    <p className="net-hero-desc">{heroMovie?.overview ? (heroMovie.overview.length > 180 ? heroMovie.overview.substring(0, 180) + "..." : heroMovie.overview) : "Fetching live data from TMDB..."}</p>
-                    <div className="net-hero-buttons">
-                      {/* 🔥 HERO BANNER PLAY PE DIRECT MOVIE STREAM CHALEGI */}
-                      <button className="net-btn-play" onClick={() => {
-                        if (heroMovie?.id) navigate(`/watch/${heroMovie.id}?play=true`);
-                      }}>
-                        <span>▶</span> Play
-                      </button>
-                      <button className="net-btn-info" onClick={() => {
-                        if (heroMovie?.id) navigate(`/watch/${heroMovie.id}`);
-                      }}>
-                        <span>ⓘ</span> More Info
-                      </button>
-                    </div>
+            </div>
+          ) : (
+            <>
+              <div className="net-hero-banner" style={{ backgroundImage: heroMovie?.backdrop_path ? `url(https://image.tmdb.org/t/p/original${heroMovie.backdrop_path})` : 'url(https://images.unsplash.com/photo-1605806616949-1e87b487cb2a?q=80&w=2000)' }}>
+                <div className="net-hero-vignette"></div>
+                <div className="net-hero-content">
+                  <h1 className="cinematic-title">{heroMovie?.title || heroMovie?.name || "Loading..."}</h1>
+                  <div className="net-hero-meta">
+                    <span className="net-match">Top 10 in India Today</span>
+                    <span className="net-age">U/A 16+</span>
+                    <span className="net-hd">4K Ultra HD</span>
+                  </div>
+                  <p className="net-hero-desc">{heroMovie?.overview ? (heroMovie.overview.length > 180 ? heroMovie.overview.substring(0, 180) + "..." : heroMovie.overview) : "Fetching live data from TMDB..."}</p>
+                  <div className="net-hero-buttons">
+                    <button className="net-btn-play" onClick={() => { if (heroMovie?.id) navigate(`/watch/${heroMovie.id}?play=true`); }}>
+                      <span>▶</span> Play
+                    </button>
+                    <button className="net-btn-info" onClick={() => { if (heroMovie?.id) navigate(`/watch/${heroMovie.id}`); }}>
+                      <span>ⓘ</span> More Info
+                    </button>
                   </div>
                 </div>
+              </div>
 
-                <div className="net-sliders-container">
-                  {visibleRows.map((row) => (
-                    <NetflixRow key={row.id} title={row.title} movies={movieData[row.dataKey]} isTop10Row={row.isTop10} />
-                  ))}
-                  <div ref={bottomBoundaryRef} style={{ width: '100%', height: '5px', background: 'transparent' }}></div>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* --- WATCH PARTY TAB --- */}
-        {activeTab === 'watchparty' && (
-          <WatchParty 
-             showCustomToast={showCustomToast} 
-             TMDB_IMAGE_BASE_URL={TMDB_IMAGE_BASE_URL} 
-          />
-        )}
-
+              <div className="net-sliders-container">
+                {visibleRows.map((row) => (
+                  <NetflixRow key={row.id} title={row.title} movies={movieData[row.dataKey]} isTop10Row={row.isTop10} />
+                ))}
+                <div ref={bottomBoundaryRef} style={{ width: '100%', height: '5px', background: 'transparent' }}></div>
+              </div>
+            </>
+          )}
+        </div>
       </main>
       <InlineStyles />
     </div>
@@ -553,7 +528,7 @@ export default function Dashboard() {
 }
 
 // ==========================================
-// 6. STYLES COMPONENT
+// STYLES COMPONENT
 // ==========================================
 const InlineStyles = () => (
   <style>{`
@@ -602,20 +577,7 @@ const InlineStyles = () => (
     .netflix-row-wrapper { margin-bottom: 30px; position: relative; z-index: 1; transition: z-index 0.2s; }
     .netflix-row-wrapper:hover { z-index: 999 !important; } 
 
-    .netflix-row-title { 
-      font-size: 20px; 
-      font-weight: bold; 
-      margin-bottom: 12px; 
-      padding-left: 4%; 
-      color: #e5e5e5; 
-      position: relative; 
-      z-index: 2; 
-      text-shadow: 1px 1px 2px black;
-      text-align: left; 
-      display: block;
-      width: 100%;
-    }
-    
+    .netflix-row-title { font-size: 20px; font-weight: bold; margin-bottom: 12px; padding-left: 4%; color: #e5e5e5; position: relative; z-index: 2; text-shadow: 1px 1px 2px black; text-align: left; display: block; width: 100%; }
     .netflix-row-container { position: relative; padding: 0 4%; }
     
     .slider-arrow { position: absolute; top: 0; bottom: 0; width: 4%; background: rgba(0,0,0,0.5); border: none; color: white; font-size: 40px; cursor: pointer; z-index: 20; opacity: 0; transition: opacity 0.3s ease, background 0.3s ease; display: flex; align-items: center; justify-content: center; }
@@ -624,123 +586,26 @@ const InlineStyles = () => (
     .right-arrow { right: 0; border-top-left-radius: 4px; border-bottom-left-radius: 4px; }
     .netflix-row-wrapper:hover .slider-arrow { opacity: 1; }
 
-    /* 🔥 CLEAN ROW SCROLLING & OVERFLOW FIX 🔥 */
-    .netflix-row { 
-      display: flex; 
-      gap: 12px; 
-      overflow-x: auto; 
-      overflow-y: visible; 
-      padding-top: 40px; 
-      padding-bottom: 160px; 
-      margin-top: -40px; 
-      margin-bottom: -160px; 
-      scroll-behavior: smooth; 
-      will-change: transform; 
-      scrollbar-width: none;
-    }
+    .netflix-row { display: flex; gap: 12px; overflow-x: auto; overflow-y: visible; padding-top: 40px; padding-bottom: 160px; margin-top: -40px; margin-bottom: -160px; scroll-behavior: smooth; will-change: transform; scrollbar-width: none; }
     .netflix-row::-webkit-scrollbar { display: none; }
 
-    /* 🔥 CARD CUT & HOVER FIX 🔥 */
-    .netflix-card-container { 
-      min-width: 250px; 
-      width: 250px; 
-      height: 140px; 
-      background-color: #141414; 
-      border-radius: 6px; 
-      position: relative; 
-      cursor: pointer; 
-      transition: transform 0.25s cubic-bezier(0.33, 1, 0.68, 1), box-shadow 0.25s ease; 
-      z-index: 1; 
-      will-change: transform;
-    }
+    .netflix-card-container { min-width: 250px; width: 250px; height: 140px; background-color: #141414; border-radius: 6px; position: relative; cursor: pointer; transition: transform 0.25s cubic-bezier(0.33, 1, 0.68, 1), box-shadow 0.25s ease; z-index: 1; will-change: transform; }
     .origin-center { transform-origin: center center; }
     .origin-left { transform-origin: left center; }
     .origin-right { transform-origin: right center; }
 
-    .card-image-wrapper { 
-      width: 100%; 
-      height: 100%; 
-      position: absolute; 
-      top: 0; 
-      left: 0; 
-      border-radius: 6px; 
-      overflow: hidden; 
-      background: #222;
-    }
+    .card-image-wrapper { width: 100%; height: 100%; position: absolute; top: 0; left: 0; border-radius: 6px; overflow: hidden; background: #222; }
     .netflix-card-img { width: 100%; height: 100%; object-fit: cover; z-index: 1; }
     .netflix-card-trailer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 2; pointer-events: none; }
     
     .net-movie-title-overlay { position: absolute; bottom: 8px; left: 10px; right: 10px; font-weight: bold; font-size: 14px; text-shadow: 1px 1px 4px black; z-index: 5; text-align: center; opacity: 1; transition: 0.3s; }
     
-    /* 🔥 TOP 10 BADGE CUT FIX 🔥 */
-    .net-top10-badge { 
-      position: absolute; 
-      top: 0; 
-      left: 0; 
-      background: #e50914; 
-      color: white; 
-      padding: 4px 8px; 
-      font-size: 11px; 
-      font-weight: 900; 
-      line-height: 1.2; 
-      border-bottom-right-radius: 6px; 
-      border-top-left-radius: 6px; 
-      text-align: center; 
-      z-index: 15; 
-      box-shadow: 2px 2px 5px rgba(0,0,0,0.5); 
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-    }
-    .recently-added-badge { 
-      position: absolute; 
-      bottom: 0; 
-      left: 50%; 
-      transform: translateX(-50%); 
-      background: #e50914; 
-      color: white; 
-      padding: 4px 10px; 
-      font-size: 11px; 
-      font-weight: bold; 
-      border-top-left-radius: 4px; 
-      border-top-right-radius: 4px; 
-      z-index: 10; 
-      opacity: 0; 
-      transition: opacity 0.3s; 
-      white-space: nowrap; 
-      box-shadow: 0 -2px 5px rgba(0,0,0,0.5); 
-    }
+    .net-top10-badge { position: absolute; top: 0; left: 0; background: #e50914; color: white; padding: 4px 8px; font-size: 11px; font-weight: 900; line-height: 1.2; border-bottom-right-radius: 6px; border-top-left-radius: 6px; text-align: center; z-index: 15; box-shadow: 2px 2px 5px rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .recently-added-badge { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); background: #e50914; color: white; padding: 4px 10px; font-size: 11px; font-weight: bold; border-top-left-radius: 4px; border-top-right-radius: 4px; z-index: 10; opacity: 0; transition: opacity 0.3s; white-space: nowrap; box-shadow: 0 -2px 5px rgba(0,0,0,0.5); }
 
-    .netflix-card-details { 
-      position: absolute; 
-      top: 100%; 
-      left: 0; 
-      right: 0; 
-      background-color: #181818; 
-      padding: 15px; 
-      border-bottom-left-radius: 6px; 
-      border-bottom-right-radius: 6px; 
-      opacity: 0; 
-      visibility: hidden; 
-      transition: opacity 0.2s ease, visibility 0.2s ease; 
-      box-shadow: 0 15px 30px rgba(0,0,0,0.95); 
-      z-index: 100; 
-      border: 1px solid #333; 
-      border-top: none; 
-      display: flex; 
-      flex-direction: column; 
-      gap: 10px; 
-    }
+    .netflix-card-details { position: absolute; top: 100%; left: 0; right: 0; background-color: #181818; padding: 15px; border-bottom-left-radius: 6px; border-bottom-right-radius: 6px; opacity: 0; visibility: hidden; transition: opacity 0.2s ease, visibility 0.2s ease; box-shadow: 0 15px 30px rgba(0,0,0,0.95); z-index: 100; border: 1px solid #333; border-top: none; display: flex; flex-direction: column; gap: 10px; }
     
-    /* 🔥 HOVER EFFECT EXPANSION 🔥 */
-    .netflix-card-container:hover { 
-      transform: scale(1.35) !important; 
-      z-index: 1000 !important; 
-      box-shadow: 0 15px 40px rgba(0,0,0,0.9); 
-      border-bottom-left-radius: 0; 
-      border-bottom-right-radius: 0; 
-    }
+    .netflix-card-container:hover { transform: scale(1.35) !important; z-index: 1000 !important; box-shadow: 0 15px 40px rgba(0,0,0,0.9); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
     .netflix-card-container:hover .card-image-wrapper { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
     .netflix-card-container:hover .netflix-card-details { opacity: 1; visibility: visible; }
     .netflix-card-container:hover .recently-added-badge { opacity: 1; }
@@ -764,7 +629,6 @@ const InlineStyles = () => (
 
     .search-results-grid { display: flex; flex-wrap: wrap; gap: 20px; padding: 0 4%; justify-content: flex-start; overflow-y: visible; padding-top: 40px; margin-top: -40px;}
 
-    /* Modal Styles */
     .hs-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000; display: flex; justify-content: center; align-items: center; padding: 15px;}
     .hs-modal-content { width: 100%; max-width: 450px; background: #141414; display: flex; flex-direction: column; padding: 25px; border-radius: 8px; border: 1px solid #333; }
     .hs-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
@@ -793,35 +657,27 @@ const InlineStyles = () => (
     .gate-add-box { background: transparent; border: 3px solid #808080; color: #808080; }
     .gate-profile-name { font-size: 16px !important; color: #808080; font-weight: 500; }
 
-    /* =========================================
-       📱 MOBILE RESPONSIVENESS FIXES 📱
-       ========================================= */
     @media (max-width: 768px) {
       .net-navbar { padding: 0 15px; }
       .net-nav-links li:not(:first-child) { display: none; }
       .net-nav-links { gap: 10px; margin-left: 10px; }
       .brand-text-colored { font-size: 20px; }
       .brand-img { height: 22px; }
-      
       .net-search-box input { width: 90px; font-size: 13px; }
       .kids-avatar-mini { display: none; }
       .net-main-avatar { width: 28px; height: 28px; }
-      
       .net-hero-banner { height: 60vh; }
       .net-hero-content { bottom: 5%; left: 15px; max-width: 90%; }
       .cinematic-title { font-size: 28px; margin-bottom: 10px; }
       .net-hero-desc { font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-bottom: 15px; }
       .net-btn-play, .net-btn-info { padding: 6px 14px; font-size: 14px; }
-      
       .netflix-row-title { font-size: 16px; padding-left: 15px; margin-bottom: 5px; text-align: left; display: block; width: 100%; }
       .netflix-row-container { padding: 0 15px; }
       .slider-arrow { display: none; } 
-      
       .netflix-card-container { min-width: 140px; width: 140px; height: 80px; }
       .netflix-card-container:hover { transform: scale(1.05) !important; z-index: 10 !important; }
       .netflix-card-details { display: none !important; }
       .recently-added-badge { display: none !important; }
-      
       .gate-main-title { font-size: 24px; }
       .gate-avatar-box { width: 80px !important; height: 80px !important; font-size: 35px; }
       .gate-profiles-grid { gap: 15px !important; }

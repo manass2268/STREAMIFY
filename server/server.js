@@ -1,7 +1,6 @@
 const express = require("express");
 const cors = require("cors");
 const nodemailer = require("nodemailer");
-// 🔥 NAYA UPDATE: Yahan getApps ko import kiya hai
 const { initializeApp, cert, getApps } = require("firebase-admin/app");
 const { getAuth } = require("firebase-admin/auth");
 require("dotenv").config();
@@ -10,21 +9,21 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// 🔥 Root Route (Ye Vercel ki 500 Crash error ko fix karega)
-app.get("/", (req, res) => res.send("Streamify API is Live! 🚀"));
+// 🔥 Root Route (Vercel serverless checks)
+app.get("/", (req, res) => res.status(200).send("Streamify API is Live! 🚀"));
 
-// 🔥 Firebase Admin Setup with Error Handling & Vercel Fix
+// =================================================================
+// 🔥 FIREBASE ADMIN SETUP (Vercel & Local Compatibility)
+// =================================================================
 try {
   let serviceAccount;
   if (process.env.FIREBASE_CREDENTIALS) {
-    // Vercel par ENV se credentials lega
     serviceAccount = JSON.parse(process.env.FIREBASE_CREDENTIALS);
   } else {
-    // Local testing ke liye file se padhega
     serviceAccount = require("./serviceAccountKey.json");
   }
 
-  // 🔥 NAYA UPDATE: Check karega ki Firebase pehle se initialize toh nahi hai
+  // Prevents "Default app already exists" crash on Vercel redeploys
   if (!getApps().length) {
     initializeApp({
       credential: cert(serviceAccount),
@@ -35,25 +34,49 @@ try {
   }
 } catch (error) {
   console.error(
-    "[CRITICAL ERROR]: Firebase JSON Parse Failed. Check Environment Variables!",
+    "[CRITICAL ERROR]: Firebase Admin Init Failed. Check Environment Variables!",
     error.message,
   );
 }
 
-// 🔥 Brevo SMTP Transporter Setup
+// =================================================================
+// 🔥 BREVO SMTP SETUP & VERIFICATION
+// =================================================================
 const transporter = nodemailer.createTransport({
   host: "smtp-relay.brevo.com",
   port: 587,
-  secure: false,
+  secure: false, // true for port 465, false for 587
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
   },
 });
 
-// 1. Welcome Email Route
+// Verify SMTP connection on startup
+transporter.verify((error, success) => {
+  if (error) {
+    console.warn(
+      "[SMTP Warning]: Mail Server offline or credentials invalid ->",
+      error.message,
+    );
+  } else {
+    console.log("[Success]: Brevo SMTP Server Ready for Delivery");
+  }
+});
+
+// =================================================================
+// 1. WELCOME EMAIL ROUTE
+// =================================================================
 app.post("/api/send-welcome-email", async (req, res) => {
   const { name, email } = req.body;
+
+  // Input safety check
+  if (!email || !email.includes("@")) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Valid email is required" });
+  }
+
   try {
     const mailOptions = {
       from: `"Streamify Support" <support.mstech4407@gmail.com>`,
@@ -61,34 +84,47 @@ app.post("/api/send-welcome-email", async (req, res) => {
       subject: "Welcome to Streamify! 🎬",
       html: `
         <div style="background-color: #09090E; color: #ffffff; padding: 30px; font-family: sans-serif; border-radius: 12px;">
-          <h2 style="color: #a855f7;">Welcome to Streamify, ${name}! 🎉</h2>
-          <p style="color: #9ca3af; font-size: 14px;">We are thrilled to have you on board. Your account has been successfully created and linked with Google.</p>
+          <h2 style="color: #a855f7;">Welcome to Streamify, ${name || "Streamer"}! 🎉</h2>
+          <p style="color: #9ca3af; font-size: 14px;">We are thrilled to have you on board. Your account has been successfully created and linked.</p>
           <hr style="border: 1px solid rgba(255,255,255,0.1); margin: 20px 0;" />
           <p style="font-size: 12px; color: #6b7280;">If you have any questions, reach out to us directly at support.mstech.</p>
         </div>
       `,
     };
+
     await transporter.sendMail(mailOptions);
     console.log(`[Success]: Welcome email sent to ${email}`);
-    res
+
+    return res
       .status(200)
       .json({ success: true, message: "Welcome email sent successfully!" });
   } catch (error) {
-    console.error("Error sending welcome email:", error);
-    res.status(500).json({ success: false, message: "Failed to send email" });
+    console.error("[Error]: Welcome email delivery failed ->", error.message);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to deliver email" });
   }
 });
 
-// 2. Password Reset Email Route
+// =================================================================
+// 2. PASSWORD RESET EMAIL ROUTE
+// =================================================================
 app.post("/api/send-reset-email", async (req, res) => {
   const { email } = req.body;
+
+  if (!email || !email.includes("@")) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Valid email is required" });
+  }
+
   try {
     const actionCodeSettings = {
       url: "https://streamify-app-ms.vercel.app/login?mode=resetPassword",
       handleCodeInApp: false,
     };
 
-    // Firebase reset link generation
+    // Generate Firebase secure reset link
     const resetLink = await getAuth().generatePasswordResetLink(
       email,
       actionCodeSettings,
@@ -109,12 +145,23 @@ app.post("/api/send-reset-email", async (req, res) => {
 
     await transporter.sendMail(mailOptions);
     console.log(`[Success]: Reset email sent to ${email}`);
-    res.status(200).json({ success: true, message: "Reset email sent!" });
+
+    return res
+      .status(200)
+      .json({ success: true, message: "Reset email sent successfully!" });
   } catch (error) {
-    console.error("Error generating reset link:", error);
-    res.status(500).json({ success: false, message: error.message });
+    console.error("[Error]: Generating reset link failed ->", error.message);
+
+    // Check if the user does not exist in Firebase Auth
+    if (error.code === "auth/user-not-found") {
+      return res
+        .status(404)
+        .json({ success: false, message: "No account found with this email" });
+    }
+
+    return res.status(500).json({ success: false, message: error.message });
   }
 });
 
-// 🔥 VERCEL FIX
+// 🔥 VERCEL SERVERLESS EXPORT
 module.exports = app;

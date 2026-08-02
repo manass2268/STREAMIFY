@@ -6,6 +6,8 @@ import { getDatabase } from "firebase/database";
 const firebaseConfig = {
   apiKey: "AIzaSyBET7ZUh5HpZJyHmVG98c16HA7Apo2nlUU",
   authDomain: "streamify-8bebc.firebaseapp.com",
+  databaseURL:
+    "https://streamify-8bebc-default-rtdb.asia-southeast1.firebasedatabase.app",
   projectId: "streamify-8bebc",
   storageBucket: "streamify-8bebc.firebasestorage.app",
   messagingSenderId: "896764474933",
